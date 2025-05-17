@@ -521,8 +521,8 @@ class ExcelProcessor:
                     new_cell.fill = self.changed_fill
 
                 ws.cell(row=row_idx, column=6, value=diff.get('change_type', ''))
-                ws.cell(row=row_idx, column=7, value=diff.get('modified_by', ''))
-                ws.cell(row=row_idx, column=8, value=diff.get('modified_date', ''))
+                ws.cell(row=row_idx, column=7, value=diff.get('modified_by', 'System'))
+                ws.cell(row=row_idx, column=8, value=diff.get('modified_date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
 
             # Format the table
             for col in range(1, len(headers) + 1):
@@ -661,7 +661,8 @@ if __name__ == "__main__":
         if choice == "1":
             # Otomatik olarak son iki Excel dosyasını bul ve karşılaştır
             directory = input("Dizin yolu (Enter tuşuna basarak mevcut dizini kullanabilirsiniz): ") or '.'
-            result = processor.auto_compare_latest_files(directory)
+            username = input("Kullanıcı adınız: ")
+            result = processor.auto_compare_latest_files(directory, username)
 
             print(f"\nKarşılaştırma tamamlandı!")
             print(f"İlk dosya: {result['file1']['filename']}")
