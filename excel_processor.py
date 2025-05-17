@@ -36,9 +36,7 @@ class ExcelProcessor:
                 print(f"Warning: {filepath} may not be a WSCAD Excel file")
 
             # Load the Excel file to verify it's readable
-            df = pd.read_excel(filepath)
-
-            # Return basic info about the file
+            df = pd.read_excel(filepath)            # Return basic info about the file
             return {
                 'filepath': filepath,
                 'filename': os.path.basename(filepath),
@@ -136,7 +134,7 @@ class ExcelProcessor:
         except Exception as e:
             raise Exception(f"Otomatik karşılaştırma işleminde hata: {e}")
 
-    def compare_specific_files(self, filepath1, filepath2):
+    def compare_specific_files(self, filepath1, filepath2, username=None):
         """Compare two specific Excel files by filepath and generate a report"""
         try:
             # Check if files exist
@@ -152,7 +150,7 @@ class ExcelProcessor:
             info2 = self.process_file(filepath2)
 
             # Compare the files
-            comparison_results = self.compare_excel_files(filepath1, filepath2)
+            comparison_results = self.compare_excel_files(filepath1, filepath2, username)
 
             # Generate a report
             report_data = self.generate_comparison_report(comparison_results)
@@ -174,7 +172,7 @@ class ExcelProcessor:
         except Exception as e:
             raise Exception(f"Dosya karşılaştırma işleminde hata: {e}")
 
-    def compare_excel_files(self, filepath1, filepath2):
+    def compare_excel_files(self, filepath1, filepath2, username=None):
         """Compare two Excel files and identify differences, focusing on column comparisons for WSCAD files"""
         try:
             # Validate file paths
@@ -300,7 +298,9 @@ class ExcelProcessor:
                             'column': col,
                             'value1': cell1,
                             'value2': cell2,
-                            'change_type': 'modified'
+                            'change_type': 'modified',
+                            'modified_by': username if username else 'System',
+                            'modified_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         })
 
             # Tablo yapısındaki ek satırları kontrol etme (df2'de fazla satırlar)
@@ -485,7 +485,7 @@ class ExcelProcessor:
             ws.title = "Comparison Results"
 
             # Add headers
-            headers = ["Type", "Row", "Column", "Original Value", "New Value", "Change Type"]
+            headers = ["Type", "Row", "Column", "Original Value", "New Value", "Change Type", "Modified By", "Modified Date"]
             for col_idx, header in enumerate(headers, 1):
                 cell = ws.cell(row=1, column=col_idx, value=header)
                 cell.font = Font(bold=True)
@@ -512,6 +512,8 @@ class ExcelProcessor:
                     new_cell.fill = self.changed_fill
 
                 ws.cell(row=row_idx, column=6, value=diff.get('change_type', ''))
+                ws.cell(row=row_idx, column=7, value=diff.get('modified_by', ''))
+                ws.cell(row=row_idx, column=8, value=diff.get('modified_date', ''))
 
             # Format the table
             for col in range(1, len(headers) + 1):
@@ -675,8 +677,11 @@ if __name__ == "__main__":
                     file2_idx = int(input("İkinci dosya numarasını girin: ")) - 1
 
                     if 0 <= file1_idx < len(files) and 0 <= file2_idx < len(files):
+                        # Kullanıcı adını al
+                        username = input("Kullanıcı adınız: ")
+
                         # Seçilen dosyalarla karşılaştırma yap
-                        result = processor.compare_specific_files(files[file1_idx]['filepath'], files[file2_idx]['filepath'])
+                        result = processor.compare_specific_files(files[file1_idx]['filepath'], files[file2_idx]['filepath'], username)
 
                         print(f"\nKarşılaştırma tamamlandı!")
                         print(f"İlk dosya: {result['file1']['filename']}")
