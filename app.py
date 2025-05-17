@@ -479,10 +479,62 @@ if auth_status:
 
     # History tab
     with tab4:
-        st.header("Activity History")
+        st.header("History & Revisions")
+        
+        tab4_1, tab4_2 = st.tabs(["Activity History", "Revision History"])
+        
+        with tab4_1:
+            # Fetch activity logs from database
+            activity_logs = db.get_activity_logs()
 
-        # Fetch activity logs from database
-        activity_logs = db.get_activity_logs()
+            if not activity_logs:
+                st.info("No activity recorded yet")
+            else:
+                # Create DataFrame for logs
+                logs_df = pd.DataFrame(activity_logs, columns=["ID", "User", "Activity", "Timestamp"])
+                st.dataframe(logs_df, use_container_width=True)
+
+        with tab4_2:
+            # Get all files for selection
+            files = db.get_all_files()
+            if files:
+                file_options = {f[1]: f[0] for f in files}  # filename: id mapping
+                selected_file = st.selectbox("Select File", options=list(file_options.keys()))
+                
+                if selected_file:
+                    file_id = file_options[selected_file]
+                    revisions = db.get_file_revisions(file_id)
+                    
+                    if revisions:
+                        st.subheader("File Revisions")
+                        rev_data = []
+                        for rev in revisions:
+                            rev_data.append({
+                                "Revision": rev[2],
+                                "Date": rev[3],
+                                "Path": rev[4]
+                            })
+                        rev_df = pd.DataFrame(rev_data)
+                        st.dataframe(rev_df, use_container_width=True)
+                        
+                        # Show comparison history
+                        comparisons = db.get_comparison_history(file_id)
+                        if comparisons:
+                            st.subheader("Comparison History")
+                            comp_data = []
+                            for comp in comparisons:
+                                comp_data.append({
+                                    "Date": comp[6],
+                                    "Changes": comp[4],
+                                    "Rev1": f"Rev {db.get_revision_by_id(comp[3])['revision_number']}",
+                                    "Rev2": f"Rev {db.get_revision_by_id(comp[4])['revision_number']}"
+                                })
+                            comp_df = pd.DataFrame(comp_data)
+                            st.dataframe(comp_df, use_container_width=True)
+                    else:
+                        st.info("No revisions found for this file")
+            else:
+                st.info("No files found in the system")
 
         if not activity_logs:
             st.info("No activity recorded yet")
