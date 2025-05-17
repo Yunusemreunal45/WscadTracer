@@ -85,6 +85,16 @@ class FileMonitor:
     def start_monitoring(self):
         if not os.path.exists(self.directory):
             raise FileNotFoundError(f"İzlenecek dizin bulunamadı veya erişilemez durumda: {self.directory}. Lütfen geçerli bir dizin seçin.")
+            
+        # Supabase bağlantısını başlat
+        try:
+            from migrate_to_supabase import get_supabase_connection
+            self.supabase_conn = get_supabase_connection()
+            if not self.supabase_conn:
+                print("Supabase bağlantısı kurulamadı, yerel depolama kullanılacak")
+        except Exception as e:
+            print(f"Supabase bağlantı hatası: {e}")
+            self.supabase_conn = None
 
         event_handler = ExcelFileHandler(self.db, self.excel_processor)
         self.observer = Observer()
