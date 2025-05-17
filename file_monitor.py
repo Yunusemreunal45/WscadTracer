@@ -86,27 +86,17 @@ class FileMonitor:
         if not os.path.exists(self.directory):
             raise FileNotFoundError(f"İzlenecek dizin bulunamadı veya erişilemez durumda: {self.directory}. Lütfen geçerli bir dizin seçin.")
 
-        # Supabase bağlantısını başlat
-        try:
-            from migrate_to_supabase import get_supabase_connection
-            self.supabase_conn = get_supabase_connection()
-            if not self.supabase_conn:
-                print("Supabase bağlantısı kurulamadı, yerel depolama kullanılacak")
-        except Exception as e:
-            print(f"Supabase bağlantı hatası: {e}")
-            self.supabase_conn = None
-
         event_handler = ExcelFileHandler(self.db, self.excel_processor)
         self.observer = Observer()
-
+        
         # Dizini izlemeye başla
         self.observer.schedule(event_handler, self.directory, recursive=True)
         self.observer.start()
         print(f"Dizin izlemeye başlandı: {self.directory}")
-
+        
         # Mevcut Excel dosyalarını tara
         self.scan_existing_files(event_handler)
-
+        
         # Son iki Excel dosyasını karşılaştır
         try:
             if self.excel_processor:
@@ -123,7 +113,7 @@ class FileMonitor:
                             supabase_conn.close()
                     except Exception as e:
                         print(f"Supabase kayıt hatası: {e}")
-
+                    
                     print("Karşılaştırma sonucu:", result)
                     return result
         except Exception as e:

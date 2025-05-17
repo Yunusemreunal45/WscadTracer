@@ -8,12 +8,6 @@ from datetime import datetime
 import json
 import glob
 
-import os
-import pandas as pd
-from datetime import datetime
-from openpyxl.styles import PatternFill
-from io import BytesIO
-
 class ExcelProcessor:
     """Class for processing and comparing Excel files"""
     
@@ -389,38 +383,20 @@ class ExcelProcessor:
         """Save comparison results to Supabase"""
         try:
             cursor = supabase_conn.cursor()
-            
-            # Dosya bilgilerini kaydet
-            cursor.execute("""
-                INSERT INTO files (filename, filepath, filesize, detected_time)
-                VALUES (%s, %s, %s, %s) RETURNING id
-            """, (
-                os.path.basename(comparison_results['file2']['filepath']),
-                comparison_results['file2']['filepath'],
-                os.path.getsize(comparison_results['file2']['filepath']),
-                datetime.now()
-            ))
-            file_id = cursor.fetchone()[0]
-            
-            # Karşılaştırma sonuçlarını kaydet
-            if 'comparison_data' in comparison_results:
-                for result in comparison_results['comparison_data']:
-                    cursor.execute("""
-                        INSERT INTO comparison_results 
-                        (file_id, type, row_num, column_name, old_value, new_value, change_type)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """, (
-                        file_id,
-                        result.get('type'),
-                        result.get('row', 0),
-                        result.get('column', ''),
-                        result.get('value1', ''),
-                        result.get('value2', ''),
-                        result.get('change_type', '')
-                    ))
-            
+            for result in comparison_results:
+                cursor.execute("""
+                    INSERT INTO comparison_results 
+                    (type, row_num, column_name, old_value, new_value, change_type)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (
+                    result.get('type'),
+                    result.get('row', 0),
+                    result.get('column', ''),
+                    result.get('value1', ''),
+                    result.get('value2', ''),
+                    result.get('change_type', '')
+                ))
             supabase_conn.commit()
-            print(f"Karşılaştırma sonuçları Supabase'e kaydedildi. File ID: {file_id}")
             return True
         except Exception as e:
             print(f"Supabase kayıt hatası: {e}")
