@@ -31,13 +31,21 @@ class ExcelFileHandler(FileSystemEventHandler):
                     from migrate_to_supabase import get_supabase_connection
                     supabase_conn = get_supabase_connection()
                     if supabase_conn:
+                        # Supabase'e kaydet
                         save_result = self.excel_processor.save_to_supabase({
                             'file1': comparison_result['file1'],
                             'file2': comparison_result['file2'],
                             'comparison_data': comparison_result['comparison_data']
                         }, supabase_conn)
-                        if save_result:
-                            print("Karşılaştırma sonuçları Supabase'e kaydedildi")
+                        
+                        # Revizyon olarak kaydet
+                        revision_result = self.excel_processor.save_comparison_as_revision(
+                            comparison_result,
+                            self.db
+                        )
+                        
+                        if save_result and revision_result:
+                            print("Karşılaştırma sonuçları Supabase ve revizyon olarak kaydedildi")
                 except Exception as e:
                     print(f"Otomatik karşılaştırma hatası: {e}")
 

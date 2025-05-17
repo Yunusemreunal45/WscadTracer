@@ -371,6 +371,54 @@ class ExcelProcessor:
         except Exception as e:
             raise Exception(f"Excel dosyalarını karşılaştırırken hata: {e}")
 
+    def save_comparison_as_revision(self, comparison_results, db):
+        """Save comparison results as a new revision"""
+        try:
+            # Get file information
+            file1_path = comparison_results['file1']['filepath']
+            file2_path = comparison_results['file2']['filepath']
+            
+            # Save comparison results to database
+            timestamp = datetime.now()
+            
+            # Add files if they don't exist
+            file1_id = db.add_file(
+                os.path.basename(file1_path),
+                file1_path,
+                os.path.getsize(file1_path) / 1024
+            )
+            
+            file2_id = db.add_file(
+                os.path.basename(file2_path),
+                file2_path,
+                os.path.getsize(file2_path) / 1024
+            )
+            
+            # Create new revision entries
+            db.execute("""
+                INSERT INTO file_revisions (file_id, revision_number, revision_path, revision_date)
+                VALUES (?, ?, ?, ?)
+            """, (file2_id, db.query_one("SELECT current_revision FROM files WHERE id = ?", (file2_id,))[0] + 1, file2_path, timestamp))
+            
+            # Save comparison details
+            comparison_id = db.execute("""
+                INSERT INTO comparisons (file_id, revision1_id, revision2_id, changes_count, comparison_date)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                file2_id,
+                db.query_one("SELECT id FROM file_revisions WHERE file_id = ? ORDER BY revision_number DESC LIMIT 1 OFFSET 1", (file2_id,))[0],
+                db.query_one("SELECT id FROM file_revisions WHERE file_id = ? ORDER BY revision_number DESC LIMIT 1", (file2_id,))[0],
+                len(comparison_results.get('comparison_data', [])),
+                timestamp
+            ))
+            
+            print(f"Karşılaştırma sonuçları revizyon olarak kaydedildi (ID: {comparison_id})")
+            return True
+            
+        except Exception as e:
+            print(f"Revizyon kaydetme hatası: {e}")
+            return False
+
     def save_to_supabase(self, comparison_results, supabase_conn):
         """Save comparison results to Supabase"""
         try:
