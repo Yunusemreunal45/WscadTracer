@@ -7,6 +7,8 @@ class Database:
 
     def __init__(self, db_file="wscad_comparison.db"):
         self.db_file = db_file
+        self._connection = None
+        self._lock = threading.Lock()
 
     def setup_database(self):
         try:
