@@ -230,7 +230,13 @@ if auth_status:
                                              options=range(len(file_ids)),
                                              format_func=lambda i: file_names[i])
 
-            if st.button("Compare Selected Files"):
+            col1, col2 = st.columns(2)
+            with col1:
+                compare_button = st.button("Compare Selected Files")
+            with col2:
+                save_as_revision = st.checkbox("Save as Revision", value=True)
+
+            if compare_button:
                 file1_id = file_ids[selected_file_index]
                 file2_id = file_ids[selected_file_index2]
                 
@@ -265,7 +271,15 @@ if auth_status:
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
                             
-                        log_activity(f"Compared files: {file1_data['filename']} and {file2_data['filename']}", db, username)
+                        # Save as revision if checked
+                            if save_as_revision:
+                                new_revision = file2_data['current_revision'] + 1
+                                db.execute("UPDATE files SET current_revision = ? WHERE id = ?", (new_revision, file2_id))
+                                db.execute("INSERT INTO file_revisions (file_id, revision_number, revision_path) VALUES (?, ?, ?)",
+                                         (file2_id, new_revision, file2_data['filepath']))
+                                st.success(f"Saved as revision {new_revision}")
+                            
+                            log_activity(f"Compared files: {file1_data['filename']} and {file2_data['filename']}", db, username)
                     except Exception as e:
                         st.error(f"Error comparing files: {str(e)}")
 
