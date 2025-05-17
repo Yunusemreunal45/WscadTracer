@@ -21,37 +21,8 @@ class ExcelProcessor:
         self.changed_fill = PatternFill(start_color='FFFFE0', end_color='FFFFE0', fill_type='solid')  # Light yellow
     
     def is_wscad_excel(self, filepath):
-        """Check if a file is a WSCAD Excel file based on specific patterns"""
-        try:
-            if not filepath.lower().endswith(('.xlsx', '.xls')):
-                return False
-            
-            # Load the Excel file
-            try:
-                df = pd.read_excel(filepath)
-                
-                # Check for typical WSCAD headers or patterns
-                # This is a simplified check - adjust based on actual WSCAD format
-                wscad_indicators = ['WSCAD', 'Material', 'PartNumber', 'Component', 'Schematic']
-                
-                # Check column names
-                for indicator in wscad_indicators:
-                    if any(indicator.lower() in col.lower() for col in df.columns):
-                        return True
-                
-                # Check content
-                first_row_data = df.iloc[0].astype(str) if len(df) > 0 else []
-                for indicator in wscad_indicators:
-                    if any(indicator.lower() in cell.lower() for cell in first_row_data):
-                        return True
-                
-                return False
-            except Exception as e:
-                print(f"Error checking Excel format: {e}")
-                return False
-        except Exception as e:
-            print(f"Error in is_wscad_excel: {e}")
-            return False
+        """Check if file is an Excel file"""
+        return filepath.lower().endswith(('.xlsx', '.xls'))
     
     def process_file(self, filepath):
         """Process an Excel file for later comparison"""
