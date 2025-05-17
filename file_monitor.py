@@ -17,7 +17,7 @@ class ExcelFileHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         if not event.is_directory and self.is_excel_file(event.src_path):
-            time.sleep(2)  # Dosyanın tam yazılmasını bekle
+            time.sleep(0.5)  # Dosyanın tam yazılmasını bekle
 
             if os.path.exists(event.src_path) and os.access(event.src_path, os.R_OK):
                 # Excel dosyasını binary modda açmayı dene
@@ -50,7 +50,7 @@ class ExcelFileHandler(FileSystemEventHandler):
 
     def on_modified(self, event):
         if not event.is_directory and self.is_excel_file(event.src_path):
-            time.sleep(1)
+            time.sleep(0.2)
 
             if os.path.exists(event.src_path) and os.access(event.src_path, os.R_OK):
                 if event.src_path in self.processed_files:
