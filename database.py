@@ -20,38 +20,22 @@ class Database:
         self.connect()
     
     def connect(self):
-        """Connect to the PostgreSQL database using psycopg2 directly instead of SQLAlchemy"""
+        """Connect to the PostgreSQL database using direct connection parameters"""
         try:
             if not self.connection_string:
                 raise ValueError("Database connection string not provided. Please set DATABASE_URL environment variable.")
             
-            # Parse connection string to extract parameters
-            # Format: postgresql://user:password@host:port/dbname
-            conn_parts = self.connection_string.replace('postgresql://', '').split('@')
+            # For Supabase, we can use direct connection parameters
+            # These are the standard parameters for Supabase PostgreSQL connection
+            host = "db.jnyxsuosikivbywxjzvr.supabase.co"
+            port = "5432"
+            database = "postgres"
+            username = "postgres"
+            password = "Yunus.2002"  # Güvenlik için gerçek bir uygulamada bu tür şifreleri kodda saklamayın
             
-            if len(conn_parts) != 2:
-                raise ValueError("Invalid connection string format")
-                
-            user_pass = conn_parts[0].split(':')
-            host_port_db = conn_parts[1].split('/')
-            
-            if len(user_pass) != 2 or len(host_port_db) < 2:
-                raise ValueError("Invalid connection string components")
-                
-            username = user_pass[0]
-            password = user_pass[1]
-            
-            host_port = host_port_db[0].split(':')
-            if len(host_port) != 2:
-                raise ValueError("Invalid host/port format")
-                
-            host = host_port[0]
-            port = host_port[1]
-            database = host_port_db[1]
+            print(f"Connecting to Supabase database: {host}:{port}/{database} as {username}")
             
             # Connect using psycopg2
-            print(f"Connecting to database: {host}:{port}/{database} as {username}")
-            
             self.connection = psycopg2.connect(
                 host=host,
                 port=port,
