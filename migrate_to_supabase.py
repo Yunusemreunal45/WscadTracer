@@ -24,7 +24,7 @@ def get_supabase_connection():
             port="5432",
             dbname="postgres",
             user="postgres",
-            password="Yunus.2002"
+            password=os.getenv('SUPABASE_PASSWORD')
         )
         conn.autocommit = True
         print("Connected to Supabase PostgreSQL")
