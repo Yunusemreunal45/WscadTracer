@@ -84,7 +84,7 @@ class ExcelProcessor:
         """Automatically find and compare the two most recent Excel files"""
         try:
             print("Otomatik karşılaştırma başlatılıyor...")
-            # İzlenen klasörden Excel dosyalarını bul
+            # Sadece izlenen klasörden Excel dosyalarını bul
             excel_files = self.list_excel_files(directory)
             if len(excel_files) < 2:
                 raise ValueError(f"En az iki Excel dosyası gerekli. Dizinde {len(excel_files)} dosya bulundu.")
@@ -377,29 +377,29 @@ class ExcelProcessor:
             # Get file information
             file1_path = comparison_results['file1']['filepath']
             file2_path = comparison_results['file2']['filepath']
-            
+
             # Save comparison results to database
             timestamp = datetime.now()
-            
+
             # Add files if they don't exist
             file1_id = db.add_file(
                 os.path.basename(file1_path),
                 file1_path,
                 os.path.getsize(file1_path) / 1024
             )
-            
+
             file2_id = db.add_file(
                 os.path.basename(file2_path),
                 file2_path,
                 os.path.getsize(file2_path) / 1024
             )
-            
+
             # Create new revision entries
             db.execute("""
                 INSERT INTO file_revisions (file_id, revision_number, revision_path, revision_date)
                 VALUES (?, ?, ?, ?)
             """, (file2_id, db.query_one("SELECT current_revision FROM files WHERE id = ?", (file2_id,))[0] + 1, file2_path, timestamp))
-            
+
             # Save comparison details
             comparison_id = db.execute("""
                 INSERT INTO comparisons (file_id, revision1_id, revision2_id, changes_count, comparison_date)
@@ -411,10 +411,10 @@ class ExcelProcessor:
                 len(comparison_results.get('comparison_data', [])),
                 timestamp
             ))
-            
+
             print(f"Karşılaştırma sonuçları revizyon olarak kaydedildi (ID: {comparison_id})")
             return True
-            
+
         except Exception as e:
             print(f"Revizyon kaydetme hatası: {e}")
             return False
@@ -443,7 +443,7 @@ class ExcelProcessor:
                 ))
                 result_id = cursor.fetchone()[0]
                 print(f"Karşılaştırma sonucu kaydedildi (ID: {result_id})")
-                
+
                 supabase_conn.commit()
                 print("Karşılaştırma sonuçları Supabase'e kaydedildi")
                 return True
