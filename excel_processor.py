@@ -179,11 +179,19 @@ class ExcelProcessor:
     def compare_excel_files(self, filepath1, filepath2):
         """Compare two Excel files and identify differences, focusing on column comparisons for WSCAD files"""
         try:
+            # Validate file paths
+            if not filepath1 or not filepath2:
+                raise ValueError("Dosya yolları boş olamaz")
+                
             # Check if files exist
             if not os.path.exists(filepath1):
-                raise FileNotFoundError(f"First file not found: {filepath1}")
+                raise FileNotFoundError(f"Birinci dosya bulunamadı: {filepath1}")
             if not os.path.exists(filepath2):
-                raise FileNotFoundError(f"Second file not found: {filepath2}")
+                raise FileNotFoundError(f"İkinci dosya bulunamadı: {filepath2}")
+                
+            # Validate file extensions
+            if not (filepath1.lower().endswith(('.xlsx', '.xls')) and filepath2.lower().endswith(('.xlsx', '.xls'))):
+                raise ValueError("Dosyalar Excel formatında (.xlsx veya .xls) olmalıdır")
             
             # Load Excel files
             df1 = pd.read_excel(filepath1)

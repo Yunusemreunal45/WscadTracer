@@ -157,10 +157,32 @@ class Database:
         return dict(result) if result else None
 
     def save_comparison_result(self, file_id, rev1_id, rev2_id, changes_count, comparison_date):
-        return self.execute("""
-            INSERT INTO comparisons (file_id, revision1_id, revision2_id, changes_count, comparison_date)
-            VALUES (?, ?, ?, ?, ?)
-        """, (file_id, rev1_id, rev2_id, changes_count, comparison_date))
+        try:
+            with sqlite3.connect(self.db_file, check_same_thread=False) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Validate inputs
+                if not all([file_id, rev1_id, rev2_id, changes_count, comparison_date]):
+                    raise ValueError("Tüm alanlar zorunludur")
+                
+                # Check if file exists
+                cursor.execute("SELECT id FROM files WHERE id = ?", (file_id,))
+                if not cursor.fetchone():
+                    raise ValueError(f"Dosya ID bulunamadı: {file_id}")
+                
+                # Insert comparison result
+                cursor.execute("""
+                    INSERT INTO comparisons (file_id, revision1_id, revision2_id, changes_count, comparison_date)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (file_id, rev1_id, rev2_id, changes_count, comparison_date))
+                
+                comparison_id = cursor.lastrowid
+                conn.commit()
+                return comparison_id
+        except Exception as e:
+            print(f"Karşılaştırma sonucu kaydedilirken hata: {e}")
+            return None
 
     def get_comparison_history(self, file_id=None):
         if file_id:
