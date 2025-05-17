@@ -120,10 +120,16 @@ class FileMonitor:
                 if filename.endswith(('.xlsx', '.xls')):
                     src_path = os.path.join(assets_dir, filename)
                     dst_path = os.path.join(self.directory, filename)
-                    if not os.path.exists(dst_path):
+                    try:
                         import shutil
                         shutil.copy2(src_path, dst_path)
                         print(f"Dosya kopyalandı: {filename}")
+                    except Exception as e:
+                        print(f"Dosya kopyalama hatası {filename}: {e}")
+                        # Hedef dizini oluştur
+                        os.makedirs(self.directory, exist_ok=True)
+                        # Tekrar kopyalamayı dene
+                        shutil.copy2(src_path, dst_path)
             
         # Supabase bağlantısını başlat
         try:
