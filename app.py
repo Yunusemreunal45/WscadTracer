@@ -134,13 +134,21 @@ if auth_status:
         )
         
         if selected_dir_option == "Custom":
-            directory = st.text_input("Özel dizin yolu girin")
+            directory = st.text_input("Özel dizin yolu girin", help="Excel dosyalarının bulunduğu dizini girin")
         else:
             directory = default_dirs[selected_dir_option]
             st.text(f"Seçilen dizin: {directory}")
         
         # Directory validation
         is_valid_dir = os.path.exists(directory) if directory else False
+        
+        if is_valid_dir:
+            st.success(f"✅ Geçerli dizin: {directory}")
+            excel_files = excel_processor.list_excel_files(directory)
+            if excel_files:
+                st.info(f"📊 Bu dizinde {len(excel_files)} Excel dosyası bulundu")
+                for file in excel_files[:5]:  # Son 5 dosyayı göster
+                    st.text(f"📑 {file['filename']} - {file['modified']}")
         
         col1, col2 = st.columns(2)
         with col1:
