@@ -21,13 +21,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize database using Supabase connection from environment variable
+# Initialize database using SQLite
 db = Database()
 setup_success = db.setup_database()
 if not setup_success:
-    st.error("Veritabanı bağlantısı kurulamadı veya tablolar oluşturulamadı. Lütfen DATABASE_URL çevresel değişkeninizi kontrol edin.")
+    st.error("Veritabanı oluşturulamadı. Lütfen uygulama izinlerini kontrol edin.")
 else:
-    st.success("Supabase PostgreSQL veritabanına başarıyla bağlandı.")
+    st.success("SQLite veritabanı başarıyla oluşturuldu.")
 
 # Initialize Excel processor
 excel_processor = ExcelProcessor()
