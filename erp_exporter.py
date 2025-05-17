@@ -79,34 +79,25 @@ class ERPExporter:
         """Export data directly to a database"""
         try:
             # Extract connection parameters
-            host = connection_params.get('host', 'localhost')
-            port = connection_params.get('port', 5432)
-            database = connection_params.get('database', '')
-            user = connection_params.get('user', '')
-            password = connection_params.get('password', '')
+            database_url = os.getenv("DATABASE_URL")
             table_name = connection_params.get('table_name', 'excel_changes')
             
-            # This is a mockup for future implementation with Supabase or other DB systems
-            # In a real implementation, this would connect to the actual database
+            # Use the provided connection parameters or environment variable
+            if not database_url:
+                # If DATABASE_URL is not set, use the provided connection parameters
+                host = connection_params.get('host', 'localhost')
+                port = connection_params.get('port', 5432)
+                database = connection_params.get('database', '')
+                user = connection_params.get('user', '')
+                password = connection_params.get('password', '')
+                
+                database_url = f"postgresql://{user}:{password}@{host}:{port}/{database}"
             
-            # For now, we'll just return a success message
-            return f"Database export prepared for {len(data)} records to {host}:{port}/{database}.{table_name}"
+            # Connect to the database using SQLAlchemy
+            from sqlalchemy import create_engine, text
             
-            # Future implementation would look like:
-            """
-            import psycopg2
-            
-            # Connect to the database
-            conn = psycopg2.connect(
-                host=host,
-                port=port,
-                database=database,
-                user=user,
-                password=password
-            )
-            
-            # Create cursor
-            cur = conn.cursor()
+            engine = create_engine(database_url)
+            conn = engine.connect()
             
             # Create table if it doesn't exist
             create_table_sql = f'''
@@ -121,35 +112,36 @@ class ERPExporter:
                 exported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             '''
-            cur.execute(create_table_sql)
+            conn.execute(text(create_table_sql))
             
             # Insert data
+            records_inserted = 0
             for item in data:
                 if item.get('type') == 'cell':
-                    cur.execute(
-                        f"INSERT INTO {table_name} (file_id, row_num, column_name, old_value, new_value, change_type) "
-                        "VALUES (%s, %s, %s, %s, %s, %s)",
-                        (
-                            file_info.get('id') if file_info else None,
-                            item.get('row'),
-                            item.get('column'),
-                            item.get('value1'),
-                            item.get('value2'),
-                            item.get('change_type')
-                        )
-                    )
+                    insert_sql = f'''
+                    INSERT INTO {table_name} (file_id, row_num, column_name, old_value, new_value, change_type) 
+                    VALUES (:file_id, :row, :column, :old_value, :new_value, :change_type)
+                    '''
+                    
+                    conn.execute(text(insert_sql), {
+                        "file_id": file_info.get('id') if file_info else None,
+                        "row": item.get('row'),
+                        "column": item.get('column'),
+                        "old_value": item.get('value1'),
+                        "new_value": item.get('value2'),
+                        "change_type": item.get('change_type')
+                    })
+                    
+                    records_inserted += 1
             
-            # Commit the transaction
-            conn.commit()
-            
-            # Close cursor and connection
-            cur.close()
+            # Close connection
             conn.close()
+            engine.dispose()
             
-            return f"Successfully exported {len(data)} records to database"
-            """
+            return f"Successfully exported {records_inserted} records to database"
         except Exception as e:
-            raise Exception(f"Database export error: {str(e)}")
+            print(f"Database export error: {str(e)}")
+            raise Exception(f"Database export failed: {str(e)}")
     
     def _prepare_export_data(self, data, include_metadata=True, file_info=None):
         """Prepare data structure for export"""
