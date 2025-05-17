@@ -113,6 +113,7 @@ class ExcelProcessor:
                 'file1': info1,
                 'file2': info2,
                 'comparison_count': len(comparison_results),
+                'comparison_data': comparison_results,
                 'report_file': report_filename
             }
         except Exception as e:
