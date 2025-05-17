@@ -9,7 +9,7 @@ class Database:
         """Initialize database connection"""
         self.db_file = db_file
         self.connection = None
-        self.connect()
+        # Bağlantıyı hemen kurma, ihtiyaç olduğunda kur (thread güvenliği için)
     
     def connect(self):
         """Connect to the SQLite database"""

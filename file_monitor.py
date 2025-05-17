@@ -119,18 +119,11 @@ class FileMonitor:
         self.observer.start()
         print(f"Started monitoring directory: {self.directory}")
         
-        try:
-            # Check for existing Excel files
-            self.scan_existing_files(event_handler)
-            
-            # Keep running until stopped
-            while not self.stop_event.is_set():
-                time.sleep(1)
-        except KeyboardInterrupt:
-            self.stop_monitoring()
-        except Exception as e:
-            print(f"Error during monitoring: {e}")
-            self.stop_monitoring()
+        # Check for existing Excel files
+        self.scan_existing_files(event_handler)
+        
+        # Bu fonksiyon bir thread içinde çalışacak ve sadece observer'ı başlatacak
+        # Ana thread bloklamamak için döngüyü kaldırıyoruz
     
     def scan_existing_files(self, event_handler):
         """Scan for existing Excel files in the directory"""

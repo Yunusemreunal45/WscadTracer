@@ -79,7 +79,7 @@ class ExcelProcessor:
             raise Exception(f"Error processing file: {e}")
     
     def compare_excel_files(self, filepath1, filepath2):
-        """Compare two Excel files and identify differences"""
+        """Compare two Excel files and identify differences, focusing on column comparisons for WSCAD files"""
         try:
             # Check if files exist
             if not os.path.exists(filepath1):
@@ -101,7 +101,8 @@ class ExcelProcessor:
                     'element': 'row_count',
                     'value1': len(df1),
                     'value2': len(df2),
-                    'diff': abs(len(df1) - len(df2))
+                    'diff': abs(len(df1) - len(df2)),
+                    'description': f"Satır sayısı değişti: {len(df1)} -> {len(df2)}"
                 })
             
             # Compare column counts and names
@@ -111,7 +112,8 @@ class ExcelProcessor:
                     'element': 'column_count',
                     'value1': len(df1.columns),
                     'value2': len(df2.columns),
-                    'diff': abs(len(df1.columns) - len(df2.columns))
+                    'diff': abs(len(df1.columns) - len(df2.columns)),
+                    'description': f"Sütun sayısı değişti: {len(df1.columns)} -> {len(df2.columns)}"
                 })
             
             # Create sets of column names for comparison
@@ -126,7 +128,8 @@ class ExcelProcessor:
                     'element': 'added_columns',
                     'value1': '',
                     'value2': ', '.join(added_cols),
-                    'diff': len(added_cols)
+                    'diff': len(added_cols),
+                    'description': f"Eklenen sütunlar: {', '.join(added_cols)}"
                 })
             
             # Find removed columns
@@ -137,52 +140,81 @@ class ExcelProcessor:
                     'element': 'removed_columns',
                     'value1': ', '.join(removed_cols),
                     'value2': '',
-                    'diff': len(removed_cols)
+                    'diff': len(removed_cols),
+                    'description': f"Kaldırılan sütunlar: {', '.join(removed_cols)}"
                 })
             
             # Cell-by-cell comparison for common columns
             common_cols = cols1.intersection(cols2)
             cell_diff = []
             
+            # WSCAD Excel dosyaları için sütun bazlı karşılaştırma
+            # Typik WSCAD sütunları için özel kontroller
+            wscad_key_columns = ['Material', 'Malzeme', 'PartNumber', 'Parça No', 'Component', 'Komponent', 'Ref', 'Miktar', 'Quantity', 'Değer', 'Value']
+            
+            # Önce WSCAD anahtar sütunlarını karşılaştır, sonra diğer sütunları
+            priority_cols = [col for col in common_cols if any(key in col for key in wscad_key_columns)]
+            other_cols = [col for col in common_cols if col not in priority_cols]
+            
+            # Sıralama: önce anahtar sütunlar, sonra diğerleri
+            sorted_cols = priority_cols + other_cols
+            
             # Determine the number of rows to compare (minimum of both DataFrames)
             max_rows = min(len(df1), len(df2))
             
-            for col in common_cols:
+            for col in sorted_cols:
                 col1_idx = df1.columns.get_loc(col) if col in df1.columns else None
                 col2_idx = df2.columns.get_loc(col) if col in df2.columns else None
                 
                 if col1_idx is not None and col2_idx is not None:
-                    for row_idx in range(max_rows):
-                        cell1 = df1.iloc[row_idx, col1_idx]
-                        cell2 = df2.iloc[row_idx, col2_idx]
+                    # Tüm sütun değerlerini karşılaştırma
+                    col_values1 = df1.iloc[:max_rows, col1_idx].fillna("").astype(str)
+                    col_values2 = df2.iloc[:max_rows, col2_idx].fillna("").astype(str)
+                    
+                    # Farklı değerleri bulma
+                    diff_mask = col_values1 != col_values2
+                    diff_indices = diff_mask[diff_mask].index
+                    
+                    # Sütun bazında genel değişimi belirtme
+                    if len(diff_indices) > 0:
+                        cell_diff.append({
+                            'type': 'column',
+                            'column': col,
+                            'diff_count': len(diff_indices),
+                            'description': f"'{col}' sütununda {len(diff_indices)} hücrede değişiklik",
+                            'change_type': 'modified'
+                        })
+                    
+                    # Her bir hücre değişimini detaylı belirtme
+                    for row_idx in diff_indices:
+                        cell1 = col_values1.iloc[row_idx]
+                        cell2 = col_values2.iloc[row_idx]
                         
-                        # Handle NaN values
-                        if pd.isna(cell1) and pd.isna(cell2):
-                            continue
-                        elif pd.isna(cell1):
-                            cell1 = ""
-                        elif pd.isna(cell2):
-                            cell2 = ""
-                        
-                        # Convert to strings for comparison
-                        cell1_str = str(cell1)
-                        cell2_str = str(cell2)
-                        
-                        if cell1_str != cell2_str:
-                            cell_diff.append({
-                                'type': 'cell',
-                                'row': row_idx + 1,  # 1-based indexing for user display
-                                'column': col,
-                                'value1': cell1_str,
-                                'value2': cell2_str,
-                                'change_type': 'modified'
-                            })
+                        cell_diff.append({
+                            'type': 'cell',
+                            'row': row_idx + 1,  # 1-based indexing for user display
+                            'column': col,
+                            'value1': cell1,
+                            'value2': cell2,
+                            'change_type': 'modified'
+                        })
             
-            # Additional rows in df2
+            # Tablo yapısındaki ek satırları kontrol etme (df2'de fazla satırlar)
             if len(df2) > len(df1):
-                for row_idx in range(len(df1), len(df2)):
-                    for col in df2.columns:
-                        if col in common_cols:
+                additional_rows = len(df2) - len(df1)
+                cell_diff.append({
+                    'type': 'structure',
+                    'element': 'additional_rows',
+                    'value1': '',
+                    'value2': f"{additional_rows} satır",
+                    'diff': additional_rows,
+                    'description': f"İkinci Excel dosyasında {additional_rows} ek satır bulunuyor"
+                })
+                
+                # Ek satırlarda içerik kontrolü
+                for col in df2.columns:
+                    if col in common_cols:
+                        for row_idx in range(len(df1), len(df2)):
                             cell_value = df2.iloc[row_idx, df2.columns.get_loc(col)]
                             if not pd.isna(cell_value) and str(cell_value).strip() != "":
                                 cell_diff.append({
@@ -194,11 +226,22 @@ class ExcelProcessor:
                                     'change_type': 'added'
                                 })
             
-            # Additional rows in df1
+            # Tablo yapısındaki eksik satırları kontrol etme (df1'de fazla satırlar)
             if len(df1) > len(df2):
-                for row_idx in range(len(df2), len(df1)):
-                    for col in df1.columns:
-                        if col in common_cols:
+                missing_rows = len(df1) - len(df2)
+                cell_diff.append({
+                    'type': 'structure',
+                    'element': 'missing_rows',
+                    'value1': f"{missing_rows} satır",
+                    'value2': '',
+                    'diff': missing_rows,
+                    'description': f"İkinci Excel dosyasında {missing_rows} satır eksik"
+                })
+                
+                # Eksik satırlarda içerik kontrolü
+                for col in df1.columns:
+                    if col in common_cols:
+                        for row_idx in range(len(df2), len(df1)):
                             cell_value = df1.iloc[row_idx, df1.columns.get_loc(col)]
                             if not pd.isna(cell_value) and str(cell_value).strip() != "":
                                 cell_diff.append({
@@ -213,9 +256,16 @@ class ExcelProcessor:
             # Combine results
             all_diff = structure_diff + cell_diff
             
+            # Sonuçları önemlilik sırasına göre sırala
+            all_diff.sort(key=lambda x: (
+                0 if x['type'] == 'structure' else 1,  # önce yapısal değişiklikler
+                0 if x.get('change_type') == 'removed' else (1 if x.get('change_type') == 'added' else 2),  # sonra kaldırılan, eklenen ve değiştirilen
+                x.get('row', 0)  # son olarak satır numarasına göre
+            ))
+            
             return all_diff
         except Exception as e:
-            raise Exception(f"Error comparing files: {e}")
+            raise Exception(f"Excel dosyalarını karşılaştırırken hata: {e}")
     
     def generate_comparison_report(self, comparison_results):
         """Generate an Excel report from comparison results"""
