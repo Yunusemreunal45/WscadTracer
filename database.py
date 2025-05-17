@@ -1,12 +1,13 @@
 import os
 from datetime import datetime
-import sqlalchemy
+import psycopg2
+import psycopg2.extras
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
 
 class Database:
-    """Database class for managing PostgreSQL database operations via SQLAlchemy"""
+    """Database class for managing PostgreSQL database operations"""
     
     def __init__(self, connection_string=None):
         """Initialize database connection"""
@@ -15,40 +16,77 @@ class Database:
         
         # Use provided connection string or get from environment
         self.connection_string = connection_string or os.getenv("DATABASE_URL")
-        self.engine = None
         self.connection = None
         self.connect()
     
     def connect(self):
-        """Connect to the PostgreSQL database"""
+        """Connect to the PostgreSQL database using psycopg2 directly instead of SQLAlchemy"""
         try:
             if not self.connection_string:
                 raise ValueError("Database connection string not provided. Please set DATABASE_URL environment variable.")
             
-            # Create SQLAlchemy engine
-            self.engine = create_engine(self.connection_string)
-            self.connection = self.engine.connect()
+            # Parse connection string to extract parameters
+            # Format: postgresql://user:password@host:port/dbname
+            conn_parts = self.connection_string.replace('postgresql://', '').split('@')
+            
+            if len(conn_parts) != 2:
+                raise ValueError("Invalid connection string format")
+                
+            user_pass = conn_parts[0].split(':')
+            host_port_db = conn_parts[1].split('/')
+            
+            if len(user_pass) != 2 or len(host_port_db) < 2:
+                raise ValueError("Invalid connection string components")
+                
+            username = user_pass[0]
+            password = user_pass[1]
+            
+            host_port = host_port_db[0].split(':')
+            if len(host_port) != 2:
+                raise ValueError("Invalid host/port format")
+                
+            host = host_port[0]
+            port = host_port[1]
+            database = host_port_db[1]
+            
+            # Connect using psycopg2
+            print(f"Connecting to database: {host}:{port}/{database} as {username}")
+            
+            self.connection = psycopg2.connect(
+                host=host,
+                port=port,
+                dbname=database,
+                user=username,
+                password=password
+            )
+            
+            # Enable autocommit
+            self.connection.autocommit = True
+            
             print("Connected to PostgreSQL database successfully")
+            return True
         except Exception as e:
             print(f"Database connection error: {e}")
+            return False
     
     def close(self):
         """Close database connection"""
         if self.connection:
             self.connection.close()
-        if self.engine:
-            self.engine.dispose()
     
     def setup_database(self):
         """Create database tables if they don't exist"""
         try:
             if not self.connection:
-                self.connect()
-                if not self.connection:
+                connected = self.connect()
+                if not connected:
                     return False
             
+            # Create cursor
+            cursor = self.connection.cursor()
+            
             # Users table
-            self.connection.execute(text('''
+            cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 username TEXT UNIQUE NOT NULL,
@@ -56,10 +94,10 @@ class Database:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP
             )
-            '''))
+            ''')
             
             # Files table
-            self.connection.execute(text('''
+            cursor.execute('''
             CREATE TABLE IF NOT EXISTS files (
                 id SERIAL PRIMARY KEY,
                 filename TEXT NOT NULL,
@@ -69,10 +107,10 @@ class Database:
                 processed BOOLEAN DEFAULT FALSE,
                 current_revision INTEGER DEFAULT 1
             )
-            '''))
+            ''')
             
             # File revisions table
-            self.connection.execute(text('''
+            cursor.execute('''
             CREATE TABLE IF NOT EXISTS file_revisions (
                 id SERIAL PRIMARY KEY,
                 file_id INTEGER NOT NULL,
@@ -81,10 +119,10 @@ class Database:
                 revision_path TEXT NOT NULL,
                 FOREIGN KEY (file_id) REFERENCES files(id)
             )
-            '''))
+            ''')
             
             # Comparison results table
-            self.connection.execute(text('''
+            cursor.execute('''
             CREATE TABLE IF NOT EXISTS comparisons (
                 id SERIAL PRIMARY KEY,
                 file_id INTEGER NOT NULL,
@@ -96,20 +134,24 @@ class Database:
                 FOREIGN KEY (revision1_id) REFERENCES file_revisions(id),
                 FOREIGN KEY (revision2_id) REFERENCES file_revisions(id)
             )
-            '''))
+            ''')
             
             # Activity logs table
-            self.connection.execute(text('''
+            cursor.execute('''
             CREATE TABLE IF NOT EXISTS activity_logs (
                 id SERIAL PRIMARY KEY,
                 username TEXT,
                 activity TEXT NOT NULL,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-            '''))
+            ''')
             
+            # Close cursor
+            cursor.close()
+            
+            print("Database tables created successfully")
             return True
-        except SQLAlchemyError as e:
+        except Exception as e:
             print(f"Database setup error: {e}")
             return False
     
@@ -117,30 +159,32 @@ class Database:
         """Execute SQL query with parameters"""
         try:
             if not self.connection:
-                self.connect()
-                if not self.connection:
+                connected = self.connect()
+                if not connected:
                     return None
-                    
-            # Convert query to SQLAlchemy text object and handle parameters
-            sql_query = text(query)
             
-            # Execute and return the result
-            result = self.connection.execute(sql_query, params if params else {})
+            # Create cursor with dictionary factory
+            cursor = self.connection.cursor()
             
-            # For INSERT statements, you typically want to return the new ID
-            # PostgreSQL's way to get the last insert ID
+            # Execute query with parameters
+            cursor.execute(query, params if params else None)
+            
+            # For INSERT statements, try to get the last inserted ID
+            last_id = None
             if query.strip().upper().startswith("INSERT"):
-                # Try to get the last inserted ID
-                last_id_query = text("SELECT lastval()")
                 try:
-                    last_id_result = self.connection.execute(last_id_query)
-                    return last_id_result.scalar()
-                except Exception:
-                    # If not possible, just return success
-                    return True
+                    cursor.execute("SELECT lastval()")
+                    last_id = cursor.fetchone()[0]
+                except Exception as e:
+                    print(f"Could not get last inserted ID: {e}")
             
-            return True
-        except SQLAlchemyError as e:
+            # Close cursor
+            cursor.close()
+            
+            # Return ID for inserts, or True for other operations
+            return last_id if last_id else True
+            
+        except Exception as e:
             print(f"SQL execution error: {e}")
             return None
     
@@ -148,22 +192,28 @@ class Database:
         """Execute query and return all results"""
         try:
             if not self.connection:
-                self.connect()
-                if not self.connection:
+                connected = self.connect()
+                if not connected:
                     return []
-                    
-            # Convert query to SQLAlchemy text object
-            sql_query = text(query)
             
-            # Execute query
-            result = self.connection.execute(sql_query, params if params else {})
+            # Create cursor with dictionary factory
+            cursor = self.connection.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            
+            # Execute query with parameters
+            cursor.execute(query, params if params else None)
             
             # Fetch all results
-            rows = result.fetchall()
+            rows = cursor.fetchall()
             
             # Convert to list of dictionaries
-            return [dict(row) for row in rows]
-        except SQLAlchemyError as e:
+            result = [dict(row) for row in rows]
+            
+            # Close cursor
+            cursor.close()
+            
+            return result
+            
+        except Exception as e:
             print(f"SQL query error: {e}")
             return []
     
@@ -171,22 +221,28 @@ class Database:
         """Execute query and return one result"""
         try:
             if not self.connection:
-                self.connect()
-                if not self.connection:
+                connected = self.connect()
+                if not connected:
                     return None
-                    
-            # Convert query to SQLAlchemy text object
-            sql_query = text(query)
             
-            # Execute query
-            result = self.connection.execute(sql_query, params if params else {})
+            # Create cursor with dictionary factory
+            cursor = self.connection.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            
+            # Execute query with parameters
+            cursor.execute(query, params if params else None)
             
             # Fetch one result
-            row = result.fetchone()
+            row = cursor.fetchone()
             
             # Convert to dictionary
-            return dict(row) if row else None
-        except SQLAlchemyError as e:
+            result = dict(row) if row else None
+            
+            # Close cursor
+            cursor.close()
+            
+            return result
+            
+        except Exception as e:
             print(f"SQL query error: {e}")
             return None
     
