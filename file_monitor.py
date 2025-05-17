@@ -17,9 +17,16 @@ class ExcelFileHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         if not event.is_directory and self.is_excel_file(event.src_path):
-            time.sleep(1)  # Dosyanın tam yazılmasını bekle
+            time.sleep(2)  # Dosyanın tam yazılmasını bekle
 
             if os.path.exists(event.src_path) and os.access(event.src_path, os.R_OK):
+                # Excel dosyasını binary modda açmayı dene
+                try:
+                    with open(event.src_path, 'rb'):
+                        pass
+                except Exception as e:
+                    print(f"Dosya okuma hatası: {e}")
+                    return
                 if event.src_path in self.processed_files:
                     return
 
