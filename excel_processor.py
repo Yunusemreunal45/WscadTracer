@@ -379,6 +379,29 @@ class ExcelProcessor:
         except Exception as e:
             raise Exception(f"Excel dosyalarını karşılaştırırken hata: {e}")
     
+    def save_to_supabase(self, comparison_results, supabase_conn):
+        """Save comparison results to Supabase"""
+        try:
+            cursor = supabase_conn.cursor()
+            for result in comparison_results:
+                cursor.execute("""
+                    INSERT INTO comparison_results 
+                    (type, row_num, column_name, old_value, new_value, change_type)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (
+                    result.get('type'),
+                    result.get('row', 0),
+                    result.get('column', ''),
+                    result.get('value1', ''),
+                    result.get('value2', ''),
+                    result.get('change_type', '')
+                ))
+            supabase_conn.commit()
+            return True
+        except Exception as e:
+            print(f"Supabase kayıt hatası: {e}")
+            return False
+
     def generate_comparison_report(self, comparison_results):
         """Generate an Excel report from comparison results"""
         try:

@@ -102,6 +102,18 @@ class FileMonitor:
             if self.excel_processor:
                 result = self.excel_processor.auto_compare_latest_files(self.directory)
                 if result:
+                    # Supabase'e kaydet
+                    try:
+                        from migrate_to_supabase import get_supabase_connection
+                        supabase_conn = get_supabase_connection()
+                        if supabase_conn:
+                            if 'comparison_data' in result:
+                                self.excel_processor.save_to_supabase(result['comparison_data'], supabase_conn)
+                                print("Karşılaştırma sonuçları Supabase'e kaydedildi")
+                            supabase_conn.close()
+                    except Exception as e:
+                        print(f"Supabase kayıt hatası: {e}")
+                    
                     print("Karşılaştırma sonucu:", result)
                     return result
         except Exception as e:

@@ -107,6 +107,20 @@ def create_supabase_tables(pg_conn):
         )
         ''')
         
+        # Comparison results table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS comparison_results (
+            id SERIAL PRIMARY KEY,
+            type TEXT NOT NULL,
+            row_num INTEGER,
+            column_name TEXT,
+            old_value TEXT,
+            new_value TEXT,
+            change_type TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+
         # Activity logs table
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS activity_logs (
