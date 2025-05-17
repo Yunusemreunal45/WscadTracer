@@ -6,6 +6,7 @@ import openpyxl
 from openpyxl.styles import PatternFill, Font, Border, Side
 from datetime import datetime
 import json
+import glob
 
 class ExcelProcessor:
     """Class for processing and comparing Excel files"""
@@ -78,6 +79,103 @@ class ExcelProcessor:
         except Exception as e:
             raise Exception(f"Error processing file: {e}")
     
+    def find_latest_excel_files(self, directory='.', pattern='*.xlsx'):
+        """Find the two most recent Excel files in a directory"""
+        try:
+            # Get all files matching the pattern
+            all_files = glob.glob(os.path.join(directory, pattern))
+            
+            # Filter out directories and hidden files
+            excel_files = [f for f in all_files if os.path.isfile(f) and not os.path.basename(f).startswith('.')]
+            
+            # If no files found, try with *.xls pattern
+            if not excel_files and pattern == '*.xlsx':
+                return self.find_latest_excel_files(directory, '*.xls')
+            
+            if len(excel_files) < 2:
+                raise ValueError(f"En az iki Excel dosyası bulunamadı: {directory} dizininde.")
+            
+            # Sort by modification time (newest first)
+            excel_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+            
+            # Return the two most recent files
+            return excel_files[0], excel_files[1]
+        except Exception as e:
+            raise Exception(f"Excel dosyalarını bulurken hata: {e}")
+    
+    def auto_compare_latest_files(self, directory='.'):
+        """Automatically find and compare the two most recent Excel files"""
+        try:
+            # Find the latest two Excel files
+            file1, file2 = self.find_latest_excel_files(directory)
+            
+            print(f"En son Excel dosyaları karşılaştırılıyor:\n1. {file1}\n2. {file2}")
+            
+            # Process both files
+            info1 = self.process_file(file1)
+            info2 = self.process_file(file2)
+            
+            # Compare the files
+            comparison_results = self.compare_excel_files(file1, file2)
+            
+            # Generate a report
+            report_data = self.generate_comparison_report(comparison_results)
+            
+            # Create a timestamped filename for the report
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            report_filename = f"comparison_report_{timestamp}.xlsx"
+            
+            # Save the report
+            with open(report_filename, "wb") as f:
+                f.write(report_data.getvalue())
+            
+            return {
+                'file1': info1,
+                'file2': info2,
+                'comparison_count': len(comparison_results),
+                'report_file': report_filename
+            }
+        except Exception as e:
+            raise Exception(f"Otomatik karşılaştırma işleminde hata: {e}")
+    
+    def compare_specific_files(self, filepath1, filepath2):
+        """Compare two specific Excel files by filepath and generate a report"""
+        try:
+            # Check if files exist
+            if not os.path.exists(filepath1):
+                raise FileNotFoundError(f"Birinci dosya bulunamadı: {filepath1}")
+            if not os.path.exists(filepath2):
+                raise FileNotFoundError(f"İkinci dosya bulunamadı: {filepath2}")
+            
+            print(f"Belirtilen Excel dosyaları karşılaştırılıyor:\n1. {filepath1}\n2. {filepath2}")
+            
+            # Process both files
+            info1 = self.process_file(filepath1)
+            info2 = self.process_file(filepath2)
+            
+            # Compare the files
+            comparison_results = self.compare_excel_files(filepath1, filepath2)
+            
+            # Generate a report
+            report_data = self.generate_comparison_report(comparison_results)
+            
+            # Create a timestamped filename for the report
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            report_filename = f"comparison_report_{timestamp}.xlsx"
+            
+            # Save the report
+            with open(report_filename, "wb") as f:
+                f.write(report_data.getvalue())
+            
+            return {
+                'file1': info1,
+                'file2': info2,
+                'comparison_count': len(comparison_results),
+                'report_file': report_filename
+            }
+        except Exception as e:
+            raise Exception(f"Dosya karşılaştırma işleminde hata: {e}")
+
     def compare_excel_files(self, filepath1, filepath2):
         """Compare two Excel files and identify differences, focusing on column comparisons for WSCAD files"""
         try:
@@ -391,3 +489,111 @@ class ExcelProcessor:
             return export_data
         except Exception as e:
             raise Exception(f"Error preparing file for export: {e}")
+    
+    def list_excel_files(self, directory='.'):
+        """List all Excel files in the specified directory"""
+        try:
+            # Get all Excel files in the directory
+            xlsx_files = glob.glob(os.path.join(directory, '*.xlsx'))
+            xls_files = glob.glob(os.path.join(directory, '*.xls'))
+            
+            # Combine the lists
+            excel_files = xlsx_files + xls_files
+            
+            # Filter out directories and hidden files
+            excel_files = [f for f in excel_files if os.path.isfile(f) and not os.path.basename(f).startswith('.')]
+            
+            # Sort by modification time (newest first)
+            excel_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+            
+            # Create a list with basic file info
+            file_list = []
+            for file in excel_files:
+                file_info = {
+                    'filepath': file,
+                    'filename': os.path.basename(file),
+                    'size_kb': round(os.path.getsize(file) / 1024, 2),
+                    'modified': datetime.fromtimestamp(os.path.getmtime(file)).strftime('%Y-%m-%d %H:%M:%S')
+                }
+                file_list.append(file_info)
+            
+            return file_list
+        except Exception as e:
+            raise Exception(f"Excel dosyalarını listelerken hata: {e}")
+
+
+# Örnek kullanım
+if __name__ == "__main__":
+    try:
+        processor = ExcelProcessor()
+        
+        # Kullanıcıya seçenekler sunma
+        print("Excel İşlemcisi")
+        print("1. Son iki Excel dosyasını otomatik karşılaştır")
+        print("2. Belirli iki Excel dosyasını karşılaştır")
+        print("3. Mevcut Excel dosyalarını listele")
+        print("4. Çıkış")
+        
+        choice = input("İşlem seçin (1-4): ")
+        
+        if choice == "1":
+            # Otomatik olarak son iki Excel dosyasını bul ve karşılaştır
+            directory = input("Dizin yolu (Enter tuşuna basarak mevcut dizini kullanabilirsiniz): ") or '.'
+            result = processor.auto_compare_latest_files(directory)
+            
+            print(f"\nKarşılaştırma tamamlandı!")
+            print(f"İlk dosya: {result['file1']['filename']}")
+            print(f"İkinci dosya: {result['file2']['filename']}")
+            print(f"Toplam {result['comparison_count']} fark tespit edildi")
+            print(f"Karşılaştırma raporu oluşturuldu: {result['report_file']}")
+            
+        elif choice == "2":
+            # Mevcut Excel dosyalarını listele
+            files = processor.list_excel_files()
+            
+            if len(files) < 2:
+                print("Karşılaştırma için en az iki Excel dosyası gerekli!")
+            else:
+                print("\nMevcut Excel Dosyaları:")
+                for i, file in enumerate(files, 1):
+                    print(f"{i}. {file['filename']} - {file['modified']}")
+                
+                # Kullanıcıdan dosya seçimlerini alma
+                try:
+                    file1_idx = int(input("\nBirinci dosya numarasını girin: ")) - 1
+                    file2_idx = int(input("İkinci dosya numarasını girin: ")) - 1
+                    
+                    if 0 <= file1_idx < len(files) and 0 <= file2_idx < len(files):
+                        # Seçilen dosyalarla karşılaştırma yap
+                        result = processor.compare_specific_files(files[file1_idx]['filepath'], files[file2_idx]['filepath'])
+                        
+                        print(f"\nKarşılaştırma tamamlandı!")
+                        print(f"İlk dosya: {result['file1']['filename']}")
+                        print(f"İkinci dosya: {result['file2']['filename']}")
+                        print(f"Toplam {result['comparison_count']} fark tespit edildi")
+                        print(f"Karşılaştırma raporu oluşturuldu: {result['report_file']}")
+                    else:
+                        print("Geçersiz dosya numarası!")
+                except ValueError:
+                    print("Lütfen geçerli bir sayı girin!")
+        
+        elif choice == "3":
+            # Mevcut Excel dosyalarını listele
+            directory = input("Dizin yolu (Enter tuşuna basarak mevcut dizini kullanabilirsiniz): ") or '.'
+            files = processor.list_excel_files(directory)
+            
+            if not files:
+                print(f"Belirtilen dizinde ({directory}) Excel dosyası bulunamadı!")
+            else:
+                print(f"\nMevcut Excel Dosyaları ({len(files)}):")
+                for i, file in enumerate(files, 1):
+                    print(f"{i}. {file['filename']} - {file['size_kb']} KB - {file['modified']}")
+        
+        elif choice == "4":
+            print("Program sonlandırılıyor...")
+        
+        else:
+            print("Geçersiz seçim!")
+    
+    except Exception as e:
+        print(f"Hata: {e}")

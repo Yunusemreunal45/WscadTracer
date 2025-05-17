@@ -8,7 +8,7 @@ from datetime import datetime
 def get_sqlite_connection(db_file="wscad_comparison.db"):
     """Get connection to SQLite database"""
     try:
-        conn = sqlite3.connect(db_file)
+        conn = sqlite3.connect(db_file, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         print(f"Connected to SQLite database: {db_file}")
         return conn

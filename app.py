@@ -75,6 +75,21 @@ def stop_monitoring():
         st.session_state.monitoring = False
         log_activity("Stopped directory monitoring", db, username)
 
+def auto_compare_latest_files(directory='.'):
+    """Find and compare the two most recent Excel files"""
+    try:
+        # Use the Excel processor to find and compare latest files
+        comparison_result = excel_processor.auto_compare_latest_files(directory)
+        
+        # Log the activity
+        log_activity(f"Auto-compared latest files: {os.path.basename(comparison_result['file1']['filepath'])} and {os.path.basename(comparison_result['file2']['filepath'])}", db, username)
+        
+        return comparison_result
+    except Exception as e:
+        st.error(f"Auto-comparison error: {str(e)}")
+        log_activity(f"Auto-comparison failed: {str(e)}", db, username)
+        return None
+
 # Main application logic
 if auth_status:
     # Initialize session state for monitoring status
@@ -90,6 +105,9 @@ if auth_status:
     
     if 'comparison_result' not in st.session_state:
         st.session_state.comparison_result = None
+    
+    if 'auto_comparison_result' not in st.session_state:
+        st.session_state.auto_comparison_result = None
 
     # Main application
     st.title("WSCAD Excel Comparison and Process Tracking System")
@@ -117,6 +135,15 @@ if auth_status:
             st.success("Directory monitoring is active")
         else:
             st.warning("Monitoring is inactive")
+
+        # Auto-comparison button (New Feature)
+        st.subheader("Quick Auto-Compare")
+        if st.button("Compare Latest Excel Files"):
+            with st.spinner("Finding and comparing the latest Excel files..."):
+                auto_result = auto_compare_latest_files()
+                if auto_result:
+                    st.session_state.auto_comparison_result = auto_result
+                    st.success(f"Auto-comparison completed! Found {auto_result['comparison_count']} differences")
         
         # Logout button
         if st.button("Logout"):
@@ -125,7 +152,7 @@ if auth_status:
             st.rerun()
     
     # Main content tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["Files", "Comparison", "History", "Export to ERP"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Files", "Comparison", "Auto-Compare", "History", "Export to ERP"])
     
     # Files tab
     with tab1:
@@ -156,15 +183,15 @@ if auth_status:
                 
                 if file_data:
                     st.session_state.selected_file = file_data
-                    log_activity(f"Loaded file: {file_data[1]}", db, username)
-                    st.success(f"Loaded file: {file_data[1]}")
+                    log_activity(f"Loaded file: {file_data['filename']}", db, username)
+                    st.success(f"Loaded file: {file_data['filename']}")
                     
                     # Process file if not already processed
-                    if not file_data[5]:  # Check processed flag
+                    if not file_data['processed']:   # Check processed flag
                         try:
-                            excel_processor.process_file(file_data[2])  # Process file at path
+                            excel_processor.process_file(file_data['filepath']) # Process file at path
                             db.mark_file_as_processed(selected_file_id)
-                            log_activity(f"Processed file: {file_data[1]}", db, username)
+                            log_activity(f"Processed file: {file_data['filename']}", db, username)
                             st.success("File processed successfully")
                             st.rerun()
                         except Exception as e:
@@ -176,10 +203,10 @@ if auth_status:
         
         if st.session_state.selected_file:
             selected_file = st.session_state.selected_file
-            st.subheader(f"Selected File: {selected_file[1]}")
+            st.subheader(f"Selected File: {selected_file['filename']}")
             
             # Get revisions for this file
-            revisions = db.get_file_revisions(selected_file[0])
+            revisions = db.get_file_revisions(selected_file['id'])
             
             if len(revisions) < 2:
                 st.info("Need at least two revisions to compare. Upload a new version of this file to enable comparison.")
@@ -222,7 +249,7 @@ if auth_status:
                                 
                                 # Save comparison result to database
                                 db.save_comparison_result(
-                                    file_id=selected_file[0],
+                                    file_id=selected_file['id'],
                                     rev1_id=rev1_id,
                                     rev2_id=rev2_id,
                                     changes_count=len(comparison_result),
@@ -249,7 +276,7 @@ if auth_status:
                         # Download comparison report as Excel
                         if st.download_button(
                             label="Download Comparison Report",
-                            data=excel_processor.generate_comparison_report(st.session_state.comparison_result),
+                            data=excel_processor.generate_comparison_report(st.session_state.comparison_result).getvalue(),
                             file_name=f"comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         ):
@@ -258,8 +285,54 @@ if auth_status:
         else:
             st.info("Please select a file from the Files tab to enable comparison")
     
-    # History tab
+    # Auto-Compare tab (New Feature)
     with tab3:
+        st.header("Auto Excel Comparison")
+        st.write("This tab automatically compares the latest two Excel files found in the monitored directory.")
+        
+        if st.button("Find and Compare Latest Files"):
+            with st.spinner("Finding and comparing the latest Excel files..."):
+                auto_result = auto_compare_latest_files()
+                if auto_result:
+                    st.session_state.auto_comparison_result = auto_result
+                    st.success(f"Auto-comparison completed!")
+        
+        # Display auto-comparison results if available
+        if st.session_state.auto_comparison_result:
+            st.subheader("Auto-Comparison Results")
+            
+            # Display file info
+            st.write(f"First file: **{os.path.basename(st.session_state.auto_comparison_result['file1']['filepath'])}**")
+            st.write(f"Second file: **{os.path.basename(st.session_state.auto_comparison_result['file2']['filepath'])}**")
+            st.write(f"Found **{st.session_state.auto_comparison_result['comparison_count']}** differences")
+            
+            # Display report download button
+            report_file = st.session_state.auto_comparison_result.get('report_file')
+            if report_file and os.path.exists(report_file):
+                with open(report_file, 'rb') as f:
+                    if st.download_button(
+                        label="Download Auto-Comparison Report",
+                        data=f.read(),
+                        file_name=f"auto_comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    ):
+                        log_activity(f"Downloaded auto-comparison report: {report_file}", db, username)
+                        st.success("Downloaded auto-comparison report successfully")
+            else:
+                # If no file saved, generate a new one
+                if 'comparison_data' in st.session_state.auto_comparison_result:
+                    comparison_data = st.session_state.auto_comparison_result['comparison_data']
+                    if st.download_button(
+                        label="Download Auto-Comparison Report",
+                        data=excel_processor.generate_comparison_report(comparison_data).getvalue(),
+                        file_name=f"auto_comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    ):
+                        log_activity("Downloaded auto-comparison report", db, username)
+                        st.success("Downloaded auto-comparison report successfully")
+    
+    # History tab
+    with tab4:
         st.header("Activity History")
         
         # Fetch activity logs from database
@@ -293,12 +366,19 @@ if auth_status:
                 st.plotly_chart(fig, use_container_width=True)
     
     # Export to ERP tab
-    with tab4:
+    with tab5:
         st.header("Export to ERP")
         
-        if st.session_state.comparison_result:
+        # First check for auto-comparison results
+        if st.session_state.auto_comparison_result:
+            st.subheader("Export Auto-Comparison Results to ERP")
+            # Add auto-comparison export UI and functionality here
+        elif st.session_state.comparison_result:
             st.subheader("Export Comparison Results to ERP")
+        else:
+            st.info("Please run a comparison first to enable ERP export")
             
+        if st.session_state.auto_comparison_result or st.session_state.comparison_result:
             # Connection settings
             with st.expander("ERP Connection Settings"):
                 erp_host = st.text_input("ERP Host", value="localhost")
@@ -324,12 +404,25 @@ if auth_status:
                             "format": export_format.lower()
                         }
                         
+                        # Determine which comparison result to use
+                        export_data = st.session_state.auto_comparison_result.get('comparison_data') if st.session_state.auto_comparison_result else st.session_state.comparison_result
+                        file_info = None
+                        
+                        if include_metadata:
+                            if st.session_state.auto_comparison_result:
+                                file_info = {
+                                    'filename': os.path.basename(st.session_state.auto_comparison_result['file2']['filepath']),
+                                    'filepath': st.session_state.auto_comparison_result['file2']['filepath']
+                                }
+                            else:
+                                file_info = st.session_state.selected_file
+                        
                         # Export the data
                         export_result = erp_exporter.export_to_erp(
-                            st.session_state.comparison_result,
+                            export_data,
                             connection_params,
                             include_metadata,
-                            file_info=st.session_state.selected_file if include_metadata else None
+                            file_info=file_info
                         )
                         
                         # Log the export activity
@@ -339,8 +432,6 @@ if auth_status:
                     except Exception as e:
                         st.error(f"Error exporting to ERP: {str(e)}")
                         log_activity(f"ERP export failed: {str(e)}", db, username)
-        else:
-            st.info("Please run a comparison first to enable ERP export")
             
         # Manual data export
         st.subheader("Manual Data Export")
@@ -366,7 +457,7 @@ if auth_status:
                 if file_data:
                     try:
                         # Process the file for export
-                        export_data = excel_processor.prepare_for_export(file_data[2])
+                        export_data = excel_processor.prepare_for_export(file_data['filepath'])
                         
                         # Show export data preview
                         st.subheader("Export Data Preview")
@@ -379,9 +470,11 @@ if auth_status:
                             file_name=f"erp_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
                             mime="application/json"
                         ):
-                            log_activity(f"Downloaded ERP export data for file: {file_data[1]}", db, username)
+                            log_activity(f"Downloaded ERP export data for file: {file_data['filename']}", db, username)
                             st.success("Downloaded export data successfully")
                     except Exception as e:
                         st.error(f"Error preparing file for export: {str(e)}")
 else:
     st.warning("Please log in to access the system")
+
+    
