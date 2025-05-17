@@ -89,25 +89,24 @@ class FileMonitor:
         event_handler = ExcelFileHandler(self.db, self.excel_processor)
         self.observer = Observer()
         
-        # Mevcut Excel dosyalarını tara
-        self.scan_existing_files(event_handler)
-        
         # Dizini izlemeye başla
         self.observer.schedule(event_handler, self.directory, recursive=True)
         self.observer.start()
+        print(f"Dizin izlemeye başlandı: {self.directory}")
+        
+        # Mevcut Excel dosyalarını tara
+        self.scan_existing_files(event_handler)
         
         # Son iki Excel dosyasını karşılaştır
         try:
             if self.excel_processor:
                 result = self.excel_processor.auto_compare_latest_files(self.directory)
-                print("Karşılaştırma sonucu:", result)
-                return result
+                if result:
+                    print("Karşılaştırma sonucu:", result)
+                    return result
         except Exception as e:
             print(f"Karşılaştırma hatası: {e}")
             return None
-        self.observer.schedule(event_handler, self.directory, recursive=True)
-
-        self.observer.start()
         print(f"Dizin izlemeye başlandı: {self.directory}")
 
         self.scan_existing_files(event_handler)

@@ -82,18 +82,24 @@ class ExcelProcessor:
     def find_latest_excel_files(self, directory='.', pattern='*.xlsx'):
         """Find the two most recent Excel files in a directory"""
         try:
-            # Get all files matching the pattern
-            all_files = glob.glob(os.path.join(directory, pattern))
+            # Get all Excel files (both .xlsx and .xls)
+            xlsx_files = glob.glob(os.path.join(directory, '*.xlsx'))
+            xls_files = glob.glob(os.path.join(directory, '*.xls'))
+            all_files = xlsx_files + xls_files
             
-            # Filter out directories and hidden files
-            excel_files = [f for f in all_files if os.path.isfile(f) and not os.path.basename(f).startswith('.')]
-            
-            # If no files found, try with *.xls pattern
-            if not excel_files and pattern == '*.xlsx':
-                return self.find_latest_excel_files(directory, '*.xls')
+            # Filter out directories, hidden files and check if they are WSCAD Excel files
+            excel_files = []
+            for f in all_files:
+                if os.path.isfile(f) and not os.path.basename(f).startswith('.'):
+                    try:
+                        if self.is_wscad_excel(f):
+                            excel_files.append(f)
+                    except Exception as e:
+                        print(f"WSCAD format kontrolünde hata: {e}")
+                        continue
             
             if len(excel_files) < 2:
-                raise ValueError(f"En az iki Excel dosyası bulunamadı: {directory} dizininde.")
+                raise ValueError(f"En az iki WSCAD Excel dosyası bulunamadı: {directory} dizininde.")
             
             # Sort by modification time (newest first)
             excel_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
