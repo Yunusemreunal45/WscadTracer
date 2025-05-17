@@ -23,9 +23,10 @@ class ExcelFileHandler(FileSystemEventHandler):
             try:
                 # Otomatik karşılaştırma yap
                 if self.excel_processor:
-                    comparison_result = self.excel_processor.auto_compare_latest_files(os.path.dirname(event.src_path))
-                    if comparison_result:
-                        print(f"Otomatik karşılaştırma tamamlandı: {comparison_result['comparison_count']} fark bulundu")
+                    try:
+                        comparison_result = self.excel_processor.auto_compare_latest_files(os.path.dirname(event.src_path))
+                        if comparison_result and 'comparison_data' in comparison_result:
+                            print(f"Otomatik karşılaştırma tamamlandı: {len(comparison_result['comparison_data'])} fark bulundu")
                         
                         # Supabase'e kaydet
                         from migrate_to_supabase import get_supabase_connection

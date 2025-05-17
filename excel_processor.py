@@ -381,16 +381,20 @@ class ExcelProcessor:
             cursor = supabase_conn.cursor()
 
             # Karşılaştırma sonuçlarını JSON olarak kaydet
-            cursor.execute("""
-                INSERT INTO comparison_results 
-                (file1_name, file2_name, comparison_data, created_at)
-                VALUES (%s, %s, %s::jsonb, %s)
-            """, (
-                os.path.basename(comparison_results['file1']['filepath']),
-                os.path.basename(comparison_results['file2']['filepath']),
-                json.dumps(comparison_results.get('comparison_data', [])),
-                datetime.now()
-            ))
+            try:
+                cursor.execute("""
+                    INSERT INTO comparison_results 
+                    (file1_name, file2_name, comparison_data, created_at)
+                    VALUES (%s, %s, %s::jsonb, %s)
+                    RETURNING id
+                """, (
+                    os.path.basename(comparison_results['file1']['filepath']),
+                    os.path.basename(comparison_results['file2']['filepath']),
+                    json.dumps(comparison_results.get('comparison_data', [])),
+                    datetime.now()
+                ))
+                result_id = cursor.fetchone()[0]
+                print(f"Karşılaştırma sonucu kaydedildi (ID: {result_id})")
 
             supabase_conn.commit()
             print("Karşılaştırma sonuçları Supabase'e kaydedildi")
