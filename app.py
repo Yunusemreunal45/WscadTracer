@@ -262,14 +262,35 @@ if auth_status:
                             diff_df = pd.DataFrame(comparison_result)
                             st.dataframe(diff_df, use_container_width=True)
                             
-                            # Add download button for comparison report
-                            report_data = excel_processor.generate_comparison_report(comparison_result)
-                            st.download_button(
-                                label="Download Comparison Report",
-                                data=report_data.getvalue(),
-                                file_name=f"comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                # Add download button for comparison report
+                                report_data = excel_processor.generate_comparison_report(comparison_result)
+                                st.download_button(
+                                    label="Download Comparison Report",
+                                    data=report_data.getvalue(),
+                                    file_name=f"comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                )
+                            
+                            with col2:
+                                if st.button("Save to Supabase"):
+                                    try:
+                                        from migrate_to_supabase import get_supabase_connection
+                                        supabase_conn = get_supabase_connection()
+                                        if supabase_conn:
+                                            save_result = excel_processor.save_to_supabase({
+                                                'file1': {'filepath': file1_data['filepath']},
+                                                'file2': {'filepath': file2_data['filepath']},
+                                                'comparison_data': comparison_result
+                                            }, supabase_conn)
+                                            if save_result:
+                                                st.success("Comparison results saved to Supabase successfully")
+                                                log_activity("Saved comparison results to Supabase", db, username)
+                                            else:
+                                                st.error("Failed to save to Supabase")
+                                    except Exception as e:
+                                        st.error(f"Error saving to Supabase: {str(e)}")
                             
                         # Save as revision if checked
                             if save_as_revision:
