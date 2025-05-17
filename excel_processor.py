@@ -83,8 +83,14 @@ class ExcelProcessor:
     def auto_compare_latest_files(self, directory='.'):
         """Automatically find and compare the two most recent Excel files"""
         try:
-            # Find the latest two Excel files
-            file1, file2 = self.find_latest_excel_files(directory)
+            # İzlenen klasörden Excel dosyalarını bul
+            excel_files = self.list_excel_files(directory)
+            if len(excel_files) < 2:
+                raise ValueError(f"En az iki Excel dosyası gerekli. Dizinde {len(excel_files)} dosya bulundu.")
+            
+            # En son iki dosyayı al
+            file1 = excel_files[0]['filepath']
+            file2 = excel_files[1]['filepath']
             
             if not os.path.exists(file1) or not os.path.exists(file2):
                 raise FileNotFoundError("Karşılaştırılacak dosyalar bulunamadı")
