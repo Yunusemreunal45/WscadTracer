@@ -215,3 +215,11 @@ class Database:
             ORDER BY timestamp DESC
             LIMIT ?
         """, (limit,))
+        
+    def get_recent_files(self, limit=5):
+        return self.query("""
+            SELECT id, filename, filepath, filesize, detected_time
+            FROM files
+            ORDER BY detected_time DESC
+            LIMIT ?
+        """, (limit,))
