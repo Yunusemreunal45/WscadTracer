@@ -17,7 +17,29 @@ class ExcelFileHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         if not event.is_directory and self.is_excel_file(event.src_path):
-            time.sleep(0.5)  # Dosyanın tam yazılmasını bekle
+            print(f"Yeni Excel dosyası algılandı: {event.src_path}")
+            time.sleep(1)  # Dosyanın tam yazılmasını bekle
+            
+            try:
+                # Otomatik karşılaştırma yap
+                if self.excel_processor:
+                    comparison_result = self.excel_processor.auto_compare_latest_files(os.path.dirname(event.src_path))
+                    if comparison_result:
+                        print(f"Otomatik karşılaştırma tamamlandı: {comparison_result['comparison_count']} fark bulundu")
+                        
+                        # Supabase'e kaydet
+                        from migrate_to_supabase import get_supabase_connection
+                        supabase_conn = get_supabase_connection()
+                        if supabase_conn:
+                            save_result = self.excel_processor.save_to_supabase({
+                                'file1': comparison_result['file1'],
+                                'file2': comparison_result['file2'],
+                                'comparison_data': comparison_result['comparison_data']
+                            }, supabase_conn)
+                            if save_result:
+                                print("Karşılaştırma sonuçları Supabase'e kaydedildi")
+            except Exception as e:
+                print(f"Otomatik karşılaştırma hatası: {e}")
 
             if os.path.exists(event.src_path) and os.access(event.src_path, os.R_OK):
                 # Excel dosyasını binary modda açmayı dene
