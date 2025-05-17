@@ -395,10 +395,13 @@ class ExcelProcessor:
                 ))
                 result_id = cursor.fetchone()[0]
                 print(f"Karşılaştırma sonucu kaydedildi (ID: {result_id})")
-
-            supabase_conn.commit()
-            print("Karşılaştırma sonuçları Supabase'e kaydedildi")
-            return True
+                
+                supabase_conn.commit()
+                print("Karşılaştırma sonuçları Supabase'e kaydedildi")
+                return True
+            except Exception as e:
+                print(f"Supabase kayıt hatası: {e}")
+                return False
 
             # Karşılaştırma sonuçlarını kaydet
             comparison_data = comparison_results.get('comparison_data', [])
