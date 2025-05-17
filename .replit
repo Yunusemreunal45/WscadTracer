@@ -1,4 +1,5 @@
 modules = ["python-3.11"]
+run = "streamlit run app.py"
 
 [nix]
 channel = "stable-24_05"
@@ -6,7 +7,7 @@ packages = ["glibcLocales"]
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["streamlit", "run", "app.py", "--server.port", "5000"]
+run = ["sh", "-c", "streamlit run app.py"]
 
 [workflows]
 runButton = "Project"
