@@ -50,22 +50,21 @@ file_monitor_thread = None
 file_monitor = None
 
 def start_monitoring(directory):
-    """Start monitoring the specified directory in a separate thread"""
-    global file_monitor, file_monitor_thread
+    """Start monitoring the specified directory as a background service"""
+    global file_monitor
 
-    # Create file monitor if not already created
-    if file_monitor is None:
-        file_monitor = FileMonitor(directory, db)
-
-    # Start monitoring in a thread if not already running
-    if file_monitor_thread is None or not file_monitor_thread.is_alive():
-        file_monitor_thread = threading.Thread(
-            target=file_monitor.start_monitoring,
-            daemon=True
-        )
-        file_monitor_thread.start()
-        st.session_state.monitoring = True
-        log_activity(f"Started monitoring directory: {directory}", db, username)
+    try:
+        # Create and start file monitor if not already created
+        if file_monitor is None:
+            file_monitor = FileMonitor(directory, db, excel_processor)
+            file_monitor.start_monitoring()
+            st.session_state.monitoring = True
+            log_activity(f"Started background monitoring for directory: {directory}", db, username)
+            return True
+        return False
+    except Exception as e:
+        st.error(f"Monitoring start error: {e}")
+        return False
 
 def stop_monitoring():
     """Stop the file monitoring thread"""

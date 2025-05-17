@@ -115,10 +115,30 @@ class FileMonitor:
         self.observer = None
         self.excel_processor = excel_processor
         self.stop_event = threading.Event()
+        self.monitor_thread = None
 
     def start_monitoring(self):
         if not os.path.exists(self.directory):
             raise FileNotFoundError(f"İzlenecek dizin bulunamadı veya erişilemez durumda: {self.directory}. Lütfen geçerli bir dizin seçin.")
+            
+        def monitor_task():
+            print(f"Arka plan izleme başlatıldı: {self.directory}")
+            self.observer = Observer()
+            event_handler = ExcelFileHandler(self.db, self.excel_processor)
+            self.observer.schedule(event_handler, self.directory, recursive=True)
+            self.observer.start()
+            try:
+                while not self.stop_event.is_set():
+                    time.sleep(1)
+            except Exception as e:
+                print(f"İzleme hatası: {e}")
+            finally:
+                if self.observer:
+                    self.observer.stop()
+                    self.observer.join()
+
+        self.monitor_thread = threading.Thread(target=monitor_task, daemon=True)
+        self.monitor_thread.start()
 
         # Önce attached_assets klasöründeki dosyaları kontrol et
         assets_dir = "attached_assets"
