@@ -77,7 +77,7 @@ class FileMonitor:
 
     def start_monitoring(self):
         if not os.path.exists(self.directory):
-            raise FileNotFoundError(f"Dizin bulunamadı: {self.directory}")
+            raise FileNotFoundError(f"İzlenecek dizin bulunamadı veya erişilemez durumda: {self.directory}")
 
         event_handler = ExcelFileHandler(self.db, self.excel_processor)
         self.observer = Observer()
