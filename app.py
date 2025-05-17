@@ -238,7 +238,7 @@ if auth_status:
             if compare_button:
                 file1_id = file_ids[selected_file_index]
                 file2_id = file_ids[selected_file_index2]
-                
+
                 file1_data = db.get_file_by_id(file1_id)
                 file2_data = db.get_file_by_id(file2_id)
 
@@ -249,18 +249,18 @@ if auth_status:
                             file1_data['filepath'],
                             file2_data['filepath']
                         )
-                        
+
                         st.session_state.comparison_result = comparison_result
-                        
+
                         # Display comparison results
                         st.success(f"Compared {file1_data['filename']} with {file2_data['filename']}")
                         st.write(f"Found {len(comparison_result)} differences")
-                        
+
                         # Create DataFrame from comparison results
                         if comparison_result:
                             diff_df = pd.DataFrame(comparison_result)
                             st.dataframe(diff_df, use_container_width=True)
-                            
+
                             col1, col2 = st.columns(2)
                             with col1:
                                 # Add download button for comparison report
@@ -271,7 +271,7 @@ if auth_status:
                                     file_name=f"comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                                 )
-                            
+
                             with col2:
                                 if st.button("Save to Supabase"):
                                     try:
@@ -290,7 +290,7 @@ if auth_status:
                                                 st.error("Failed to save to Supabase")
                                     except Exception as e:
                                         st.error(f"Error saving to Supabase: {str(e)}")
-                            
+
                         # Save as revision if checked
                             if save_as_revision:
                                 new_revision = file2_data['current_revision'] + 1
@@ -298,7 +298,7 @@ if auth_status:
                                 db.execute("INSERT INTO file_revisions (file_id, revision_number, revision_path) VALUES (?, ?, ?)",
                                          (file2_id, new_revision, file2_data['filepath']))
                                 st.success(f"Saved as revision {new_revision}")
-                            
+
                             log_activity(f"Compared files: {file1_data['filename']} and {file2_data['filename']}", db, username)
                     except Exception as e:
                         st.error(f"Error comparing files: {str(e)}")
@@ -405,7 +405,7 @@ if auth_status:
                         if auto_result:
                             st.session_state.auto_comparison_result = auto_result
                             st.success(f"Karşılaştırma tamamlandı! {auto_result['comparison_count']} fark bulundu.")
-                            
+
                             # Supabase'e kaydetme seçeneği
                             try:
                                 from migrate_to_supabase import get_supabase_connection
@@ -423,7 +423,7 @@ if auth_status:
                                 st.warning(f"Supabase'e kaydetme başarısız: {str(e)}")
                     except Exception as e:
                         st.error(f"Karşılaştırma hatası: {str(e)}")
-        
+
         with col2:
             if st.button("Son Karşılaştırmaları Göster"):
                 try:
@@ -450,6 +450,13 @@ if auth_status:
             st.write(f"First file: **{os.path.basename(st.session_state.auto_comparison_result['file1']['filepath'])}**")
             st.write(f"Second file: **{os.path.basename(st.session_state.auto_comparison_result['file2']['filepath'])}**")
             st.write(f"Found **{st.session_state.auto_comparison_result['comparison_count']}** differences")
+            st.write(f"Modified by: **{st.session_state.auto_comparison_result.get('modified_by', 'System')}**")
+            st.write(f"Comparison date: **{st.session_state.auto_comparison_result.get('comparison_date', '')}**")
+
+            # Display comparison data in a table
+            if 'comparison_data' in st.session_state.auto_comparison_result:
+                comparison_df = pd.DataFrame(st.session_state.auto_comparison_result['comparison_data'])
+                st.dataframe(comparison_df)
 
             # Display report download button
             report_file = st.session_state.auto_comparison_result.get('report_file')
@@ -479,9 +486,9 @@ if auth_status:
     # History tab
     with tab4:
         st.header("History & Revisions")
-        
+
         tab4_1, tab4_2 = st.tabs(["Activity History", "Revision History"])
-        
+
         with tab4_1:
             # Fetch activity logs from database
             activity_logs = db.get_activity_logs()
@@ -499,11 +506,11 @@ if auth_status:
             if files:
                 file_options = {f[1]: f[0] for f in files}  # filename: id mapping
                 selected_file = st.selectbox("Select File", options=list(file_options.keys()))
-                
+
                 if selected_file:
                     file_id = file_options[selected_file]
                     revisions = db.get_file_revisions(file_id)
-                    
+
                     if revisions:
                         st.subheader("File Revisions")
                         rev_data = []
@@ -515,7 +522,7 @@ if auth_status:
                             })
                         rev_df = pd.DataFrame(rev_data)
                         st.dataframe(rev_df, use_container_width=True)
-                        
+
                         # Show comparison history
                         comparisons = db.get_comparison_history(file_id)
                         if comparisons:

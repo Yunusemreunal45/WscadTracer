@@ -78,7 +78,7 @@ class ExcelProcessor:
         except Exception as e:
             raise Exception(f"Excel dosyalarını bulurken hata: {e}")
 
-    def auto_compare_latest_files(self, directory='.'):
+    def auto_compare_latest_files(self, directory='.', username=None):
         """Automatically find and compare the two most recent Excel files"""
         try:
             print("Otomatik karşılaştırma başlatılıyor...")
@@ -93,6 +93,8 @@ class ExcelProcessor:
             file1 = excel_files[0]['filepath']
             file2 = excel_files[1]['filepath']
 
+            print(f"Karşılaştırılıyor:\n1. {os.path.basename(file1)}\n2. {os.path.basename(file2)}")
+
             if not os.path.exists(file1) or not os.path.exists(file2):
                 raise FileNotFoundError("Karşılaştırılacak dosyalar bulunamadı")
 
@@ -102,16 +104,21 @@ class ExcelProcessor:
             info1 = self.process_file(file1)
             info2 = self.process_file(file2)
 
-            # Compare the files
-            comparison_data = self.compare_excel_files(file1, file2)
+            # Compare the files with username
+            comparison_data = self.compare_excel_files(file1, file2, username)
 
             # Create comparison result structure
             comparison_result = {
-                'file1': {'filepath': file1},
-                'file2': {'filepath': file2},
+                'file1': info1,
+                'file2': info2,
                 'comparison_data': comparison_data,
-                'comparison_count': len(comparison_data)
+                'comparison_count': len(comparison_data),
+                'comparison_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'modified_by': username if username else 'System'
             }
+
+            # Save comparison as revision
+            self.save_comparison_as_revision(comparison_result, db)
 
             # Generate a report
             report_data = self.generate_comparison_report(comparison_data)
