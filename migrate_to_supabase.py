@@ -19,22 +19,32 @@ def get_sqlite_connection(db_file="wscad_comparison.db"):
 def get_supabase_connection():
     """Get connection to Supabase PostgreSQL database"""
     try:
-        conn = psycopg2.connect(
-            host="db.jnyxsuosikivbywxjzvr.supabase.co",
-            port="5432",
-            dbname="postgres",
-            user="postgres",
+        if not all([
+            os.getenv('SUPABASE_HOST'),
+            os.getenv('SUPABASE_DATABASE'),
+            os.getenv('SUPABASE_USER'),
+            os.getenv('SUPABASE_PASSWORD')
+        ]):
+            raise ValueError("Missing Supabase environment variables")
+
+        connection = psycopg2.connect(
+            host=os.getenv('SUPABASE_HOST'),
+            database=os.getenv('SUPABASE_DATABASE'),
+            user=os.getenv('SUPABASE_USER'),
             password=os.getenv('SUPABASE_PASSWORD')
         )
-        conn.autocommit = True
-        print("Connected to Supabase PostgreSQL")
-
-        # Create tables if they don't exist
-        create_supabase_tables(conn)
-        return conn
+        return connection
     except Exception as e:
-        print(f"Supabase PostgreSQL connection error: {e}")
+        print(f"Supabase connection error: {e}")
         return None
+
+def close_supabase_connection(connection):
+    if connection:
+        try:
+            connection.close()
+            print("Supabase connection closed successfully")
+        except Exception as e:
+            print(f"Error closing Supabase connection: {e}")
 
 def create_supabase_tables(conn):
     """Create necessary tables in Supabase"""
@@ -72,35 +82,35 @@ def migrate_table(sqlite_conn, pg_conn, table_name, columns, column_types=None):
     """Migrate a table from SQLite to Supabase PostgreSQL"""
     if not sqlite_conn or not pg_conn:
         return False
-    
+
     try:
         sqlite_cursor = sqlite_conn.cursor()
         pg_cursor = pg_conn.cursor()
-        
+
         # Get data from SQLite
         sqlite_cursor.execute(f"SELECT {', '.join(columns)} FROM {table_name}")
         rows = sqlite_cursor.fetchall()
-        
+
         if not rows:
             print(f"No data in table {table_name}")
             return True
-        
+
         # Insert data into PostgreSQL
         for row in rows:
             # Convert row to dictionary
             row_dict = dict(row)
-            
+
             # Build SQL INSERT statement
             placeholders = ', '.join(['%s'] * len(columns))
             column_list = ', '.join(columns)
             sql = f"INSERT INTO {table_name} ({column_list}) VALUES ({placeholders})"
-            
+
             # Convert row to list of values for PostgreSQL
             values = [row_dict[col] for col in columns]
-            
+
             # Execute INSERT
             pg_cursor.execute(sql, values)
-        
+
         print(f"Migrated {len(rows)} rows from table {table_name}")
         return True
     except Exception as e:
@@ -111,7 +121,7 @@ def migrate_data(sqlite_conn, pg_conn):
     """Migrate all data from SQLite to Supabase PostgreSQL"""
     if not sqlite_conn or not pg_conn:
         return False
-    
+
     # Define tables and columns to migrate
     tables = {
         "users": ["username", "password", "created_at", "last_login"],
@@ -120,12 +130,12 @@ def migrate_data(sqlite_conn, pg_conn):
         "comparisons": ["file_id", "revision1_id", "revision2_id", "changes_count", "comparison_date"],
         "activity_logs": ["username", "activity", "timestamp"]
     }
-    
+
     success = True
     for table, columns in tables.items():
         if not migrate_table(sqlite_conn, pg_conn, table, columns):
             success = False
-    
+
     return success
 
 def main():
@@ -133,24 +143,24 @@ def main():
     # Get connections
     sqlite_conn = get_sqlite_connection()
     pg_conn = get_supabase_connection()
-    
+
     if not sqlite_conn:
         print("Failed to connect to SQLite database")
         return
-    
+
     if not pg_conn:
         print("Failed to connect to Supabase PostgreSQL database")
         return
-    
+
     # Migrate data
     if migrate_data(sqlite_conn, pg_conn):
         print("Data migration successful")
     else:
         print("Data migration failed")
-    
+
     # Close connections
     sqlite_conn.close()
-    pg_conn.close()
+    close_supabase_connection(pg_conn)
 
 if __name__ == "__main__":
     main()

@@ -19,14 +19,14 @@ class ExcelFileHandler(FileSystemEventHandler):
         if not event.is_directory and self.is_excel_file(event.src_path):
             print(f"Yeni Excel dosyası algılandı: {event.src_path}")
             time.sleep(1)  # Dosyanın tam yazılmasını bekle
-            
+
             # Otomatik karşılaştırma yap
             if self.excel_processor:
                 try:
                     comparison_result = self.excel_processor.auto_compare_latest_files(os.path.dirname(event.src_path))
                     if comparison_result and 'comparison_data' in comparison_result:
                         print(f"Otomatik karşılaştırma tamamlandı: {len(comparison_result['comparison_data'])} fark bulundu")
-                    
+
                     # Supabase'e kaydet
                     from migrate_to_supabase import get_supabase_connection
                     supabase_conn = get_supabase_connection()
@@ -37,13 +37,13 @@ class ExcelFileHandler(FileSystemEventHandler):
                             'file2': comparison_result['file2'],
                             'comparison_data': comparison_result['comparison_data']
                         }, supabase_conn)
-                        
+
                         # Revizyon olarak kaydet
                         revision_result = self.excel_processor.save_comparison_as_revision(
                             comparison_result,
                             self.db
                         )
-                        
+
                         if save_result and revision_result:
                             print("Karşılaştırma sonuçları Supabase ve revizyon olarak kaydedildi")
                 except Exception as e:
@@ -110,17 +110,17 @@ class ExcelFileHandler(FileSystemEventHandler):
 
 class FileMonitor:
     def __init__(self, directory, db, excel_processor=None):
-        self.directory = directory
+        self.directory = os.path.abspath(directory)
         self.db = db
-        self.observer = None
         self.excel_processor = excel_processor
-        self.stop_event = threading.Event()
-        self.monitor_thread = None
+        self.observer = None
+        self.is_running = False
+        self._lock = threading.Lock()
 
     def start_monitoring(self):
         if not os.path.exists(self.directory):
             raise FileNotFoundError(f"İzlenecek dizin bulunamadı veya erişilemez durumda: {self.directory}. Lütfen geçerli bir dizin seçin.")
-            
+
         def monitor_task():
             print(f"Arka plan izleme başlatıldı: {self.directory}")
             self.observer = Observer()
@@ -158,7 +158,7 @@ class FileMonitor:
                         os.makedirs(self.directory, exist_ok=True)
                         # Tekrar kopyalamayı dene
                         shutil.copy2(src_path, dst_path)
-            
+
         # Supabase bağlantısını başlat
         try:
             from migrate_to_supabase import get_supabase_connection
@@ -171,15 +171,15 @@ class FileMonitor:
 
         event_handler = ExcelFileHandler(self.db, self.excel_processor)
         self.observer = Observer()
-        
+
         # Dizini izlemeye başla
         self.observer.schedule(event_handler, self.directory, recursive=True)
         self.observer.start()
         print(f"Dizin izlemeye başlandı: {self.directory}")
-        
+
         # Mevcut Excel dosyalarını tara
         self.scan_existing_files(event_handler)
-        
+
         # Önce Excel dosyalarını karşılaştır
         try:
             if self.excel_processor:
@@ -191,7 +191,7 @@ class FileMonitor:
                         latest_files[0]['filepath'],
                         latest_files[1]['filepath']
                     )
-                    
+
                     if comparison_result:
                         # Supabase'e kaydet
                         try:
@@ -206,7 +206,7 @@ class FileMonitor:
                                 print("Karşılaştırma sonuçları Supabase'e kaydedildi")
                         except Exception as e:
                             print(f"Supabase kayıt hatası: {e}")
-                        
+
                         print("Excel karşılaştırma sonucu:", comparison_result)
                         return comparison_result
                 else:

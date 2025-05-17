@@ -421,10 +421,12 @@ class ExcelProcessor:
 
     def save_to_supabase(self, comparison_results, supabase_conn):
         """Save comparison results to Supabase"""
+        cursor = None
         try:
             if not supabase_conn:
-                print("Supabase bağlantısı bulunamadı")
-                return False
+                raise ValueError("Supabase bağlantısı bulunamadı")
+            if not comparison_results:
+                raise ValueError("Karşılaştırma sonuçları boş")
 
             cursor = supabase_conn.cursor()
 

@@ -77,15 +77,20 @@ class Database:
 
     def execute(self, query, params=None):
         try:
-            with sqlite3.connect(self.db_file, check_same_thread=False) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                if params:
-                    cursor.execute(query, params)
-                else:
-                    cursor.execute(query)
-                conn.commit()
-                return cursor.lastrowid
+            with self._lock:  # Use thread lock for thread safety
+                with sqlite3.connect(self.db_file, check_same_thread=False) as conn:
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    try:
+                        if params:
+                            cursor.execute(query, params)
+                        else:
+                            cursor.execute(query)
+                        conn.commit()
+                        return cursor.lastrowid
+                    except sqlite3.Error as e:
+                        conn.rollback()
+                        raise e
         except Exception as e:
             print(f"SQL execution error: {e}")
             return None
