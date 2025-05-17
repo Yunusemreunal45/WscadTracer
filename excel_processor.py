@@ -494,10 +494,10 @@ class ExcelProcessor:
             ws.title = "Comparison Results"
 
             # Add report header
+            ws.cell(row=1, column=1, value="WSCAD Excel Comparison Report")
             ws.merge_cells('A1:H1')
-            header_cell = ws.cell(row=1, column=1, value="WSCAD Excel Comparison Report")
-            header_cell.font = Font(bold=True, size=14)
-            header_cell.alignment = openpyxl.styles.Alignment(horizontal='center')
+            ws['A1'].font = Font(bold=True, size=14)
+            ws['A1'].alignment = openpyxl.styles.Alignment(horizontal='center')
 
             # Add timestamp and user info
             ws.cell(row=2, column=1, value=f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -506,7 +506,7 @@ class ExcelProcessor:
             headers = ["Type", "Row/Element", "Column", "Original Value", "New Value", "Change Type", "Modified By", "Modified Date"]
             row_offset = 4  # Start data from row 4
             for col_idx, header in enumerate(headers, 1):
-                cell = ws.cell(row=1, column=col_idx, value=header)
+                cell = ws.cell(row=3, column=col_idx, value=header)
                 cell.font = Font(bold=True)
 
             # Add data with improved formatting
