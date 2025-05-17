@@ -127,11 +127,11 @@ class FileMonitor:
                             if supabase_conn:
                                 self.excel_processor.save_to_supabase({
                                     'file1': latest_files[0],
+                                    'file2'file1': latest_files[0],
                                     'file2': latest_files[1],
                                     'comparison_data': comparison_result
                                 }, supabase_conn)
                                 print("Karşılaştırma sonuçları Supabase'e kaydedildi")
-                                supabase_conn.close()
                         except Exception as e:
                             print(f"Supabase kayıt hatası: {e}")
                         
@@ -141,7 +141,6 @@ class FileMonitor:
                     print("Dizinde en az iki Excel dosyası bulunamadı")
         except Exception as e:
             print(f"Excel karşılaştırma hatası: {e}")
-            print(f"Karşılaştırma hatası: {e}")
             return None
         print(f"Dizin izlemeye başlandı: {self.directory}")
 

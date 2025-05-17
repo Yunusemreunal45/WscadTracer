@@ -372,8 +372,9 @@ class ExcelProcessor:
             file_id = cursor.fetchone()[0]
             
             # Karşılaştırma sonuçlarını kaydet
-            if 'comparison_data' in comparison_results:
-                for result in comparison_results['comparison_data']:
+            comparison_data = comparison_results.get('comparison_data', [])
+            if comparison_data:
+                for result in comparison_data:
                     cursor.execute("""
                         INSERT INTO comparison_results 
                         (file_id, type, row_num, column_name, old_value, new_value, change_type)
