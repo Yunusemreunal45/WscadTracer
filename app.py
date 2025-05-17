@@ -22,12 +22,19 @@ st.set_page_config(
 )
 
 # Initialize database using SQLite
-db = Database()
-setup_success = db.setup_database()
+@st.cache_resource
+def get_database():
+    """Singleton veri tabanı oluştur (thread güvenliği için)"""
+    db = Database()
+    setup_success = db.setup_database()
+    return db, setup_success
+
+db, setup_success = get_database()
+
 if not setup_success:
     st.error("Veritabanı oluşturulamadı. Lütfen uygulama izinlerini kontrol edin.")
 else:
-    st.success("SQLite veritabanı başarıyla oluşturuldu.")
+    st.success("WSCAD Excel karşılaştırma sistemi hazır.")
 
 # Initialize Excel processor
 excel_processor = ExcelProcessor()
