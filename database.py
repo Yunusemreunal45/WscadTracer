@@ -20,29 +20,15 @@ class Database:
         self.connect()
     
     def connect(self):
-        """Connect to the PostgreSQL database using direct connection parameters"""
+        """Connect to the PostgreSQL database using the connection string directly"""
         try:
             if not self.connection_string:
                 raise ValueError("Database connection string not provided. Please set DATABASE_URL environment variable.")
             
-            # For Supabase, we can use direct connection parameters
-            # These are the standard parameters for Supabase PostgreSQL connection
-            host = "db.jnyxsuosikivbywxjzvr.supabase.co"
-            port = "5432"
-            database = "postgres"
-            username = "postgres"
-            password = "Yunus.2002"  # Güvenlik için gerçek bir uygulamada bu tür şifreleri kodda saklamayın
+            print(f"Connecting to Supabase database using connection string")
             
-            print(f"Connecting to Supabase database: {host}:{port}/{database} as {username}")
-            
-            # Connect using psycopg2
-            self.connection = psycopg2.connect(
-                host=host,
-                port=port,
-                dbname=database,
-                user=username,
-                password=password
-            )
+            # Connect using the connection string directly
+            self.connection = psycopg2.connect(self.connection_string)
             
             # Enable autocommit
             self.connection.autocommit = True
