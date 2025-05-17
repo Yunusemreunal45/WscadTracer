@@ -395,17 +395,53 @@ if auth_status:
     # Auto-Compare tab (New Feature)
     with tab3:
         st.header("Auto Excel Comparison")
-        st.write("This tab automatically compares the latest two Excel files found in the monitored directory.")
+        st.write("Son eklenen iki Excel dosyasını otomatik olarak karşılaştırır.")
 
-        if st.button("Find and Compare Latest Files"):
-            with st.spinner("Finding and comparing the latest Excel files..."):
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Dosyaları Karşılaştır"):
+                with st.spinner("Excel dosyaları karşılaştırılıyor..."):
+                    try:
+                        auto_result = auto_compare_latest_files()
+                        if auto_result:
+                            st.session_state.auto_comparison_result = auto_result
+                            st.success(f"Karşılaştırma tamamlandı! {auto_result['comparison_count']} fark bulundu.")
+                            
+                            # Supabase'e kaydetme seçeneği
+                            try:
+                                from migrate_to_supabase import get_supabase_connection
+                                supabase_conn = get_supabase_connection()
+                                if supabase_conn:
+                                    save_result = excel_processor.save_to_supabase({
+                                        'file1': auto_result['file1'],
+                                        'file2': auto_result['file2'],
+                                        'comparison_data': auto_result.get('comparison_data', [])
+                                    }, supabase_conn)
+                                    if save_result:
+                                        st.success("Sonuçlar Supabase'e kaydedildi")
+                                        log_activity("Auto-comparison results saved to Supabase", db, username)
+                            except Exception as e:
+                                st.warning(f"Supabase'e kaydetme başarısız: {str(e)}")
+                    except Exception as e:
+                        st.error(f"Karşılaştırma hatası: {str(e)}")
+        
+        with col2:
+            if st.button("Son Karşılaştırmaları Göster"):
                 try:
-                    auto_result = auto_compare_latest_files()
-                    if auto_result:
-                        st.session_state.auto_comparison_result = auto_result
-                        st.success(f"Otomatik karşılaştırma tamamlandı!")
+                    from migrate_to_supabase import get_supabase_connection
+                    supabase_conn = get_supabase_connection()
+                    if supabase_conn:
+                        cursor = supabase_conn.cursor()
+                        cursor.execute("SELECT * FROM comparison_results ORDER BY created_at DESC LIMIT 5")
+                        recent_comparisons = cursor.fetchall()
+                        if recent_comparisons:
+                            st.write("Son Karşılaştırmalar:")
+                            for comp in recent_comparisons:
+                                st.write(f"- {comp[3]} vs {comp[4]} ({comp[5]} fark)")
+                        else:
+                            st.info("Henüz kaydedilmiş karşılaştırma bulunmuyor")
                 except Exception as e:
-                    st.error(f"Otomatik karşılaştırma hatası: {str(e)}")
+                    st.error(f"Karşılaştırma geçmişi yüklenemedi: {str(e)}")
 
         # Display auto-comparison results if available
         if st.session_state.auto_comparison_result:

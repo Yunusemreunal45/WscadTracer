@@ -86,6 +86,9 @@ class ExcelProcessor:
             # Find the latest two Excel files
             file1, file2 = self.find_latest_excel_files(directory)
             
+            if not os.path.exists(file1) or not os.path.exists(file2):
+                raise FileNotFoundError("Karşılaştırılacak dosyalar bulunamadı")
+                
             print(f"En son Excel dosyaları karşılaştırılıyor:\n1. {file1}\n2. {file2}")
             
             # Process both files
