@@ -225,25 +225,49 @@ if auth_status:
                                               options=range(len(file_ids)),
                                               format_func=lambda i: file_names[i])
 
-            if st.button("Load Selected File"):
-                selected_file_id = file_ids[selected_file_index]
-                file_data = db.get_file_by_id(selected_file_id)
+            # Allow selecting two files for comparison
+            selected_file_index2 = st.selectbox("Select second file for comparison", 
+                                             options=range(len(file_ids)),
+                                             format_func=lambda i: file_names[i])
 
-                if file_data:
-                    st.session_state.selected_file = file_data
-                    log_activity(f"Loaded file: {file_data['filename']}", db, username)
-                    st.success(f"Loaded file: {file_data['filename']}")
+            if st.button("Compare Selected Files"):
+                file1_id = file_ids[selected_file_index]
+                file2_id = file_ids[selected_file_index2]
+                
+                file1_data = db.get_file_by_id(file1_id)
+                file2_data = db.get_file_by_id(file2_id)
 
-                    # Process file if not already processed
-                    if not file_data['processed']:   # Check processed flag
-                        try:
-                            excel_processor.process_file(file_data['filepath']) # Process file at path
-                            db.mark_file_as_processed(selected_file_id)
-                            log_activity(f"Processed file: {file_data['filename']}", db, username)
-                            st.success("File processed successfully")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error processing file: {str(e)}")
+                if file1_data and file2_data:
+                    try:
+                        # Directly compare the two Excel files
+                        comparison_result = excel_processor.compare_excel_files(
+                            file1_data['filepath'],
+                            file2_data['filepath']
+                        )
+                        
+                        st.session_state.comparison_result = comparison_result
+                        
+                        # Display comparison results
+                        st.success(f"Compared {file1_data['filename']} with {file2_data['filename']}")
+                        st.write(f"Found {len(comparison_result)} differences")
+                        
+                        # Create DataFrame from comparison results
+                        if comparison_result:
+                            diff_df = pd.DataFrame(comparison_result)
+                            st.dataframe(diff_df, use_container_width=True)
+                            
+                            # Add download button for comparison report
+                            report_data = excel_processor.generate_comparison_report(comparison_result)
+                            st.download_button(
+                                label="Download Comparison Report",
+                                data=report_data.getvalue(),
+                                file_name=f"comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                            
+                        log_activity(f"Compared files: {file1_data['filename']} and {file2_data['filename']}", db, username)
+                    except Exception as e:
+                        st.error(f"Error comparing files: {str(e)}")
 
     # Comparison tab
     with tab2:
