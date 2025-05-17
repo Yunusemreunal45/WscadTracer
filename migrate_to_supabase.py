@@ -18,123 +18,54 @@ def get_sqlite_connection(db_file="wscad_comparison.db"):
 
 def get_supabase_connection():
     """Get connection to Supabase PostgreSQL database"""
-    # Load environment variables from .env file
-    load_dotenv()
-    
     try:
-        # Connect to Supabase PostgreSQL using direct connection parameters
-        print("Connecting to Supabase PostgreSQL...")
-        
-        # These should match your Supabase project settings
-        host = "db.jnyxsuosikivbywxjzvr.supabase.co"
-        port = "5432"
-        database = "postgres"
-        user = "postgres"
-        password = "Yunus.2002"  # Bu şifreyi gerçek bir uygulamada bu şekilde saklamak güvenlik riski oluşturur
-        
-        # Connect with direct parameters
         conn = psycopg2.connect(
-            host=host,
-            port=port,
-            dbname=database,
-            user=user,
-            password=password
+            host="db.jnyxsuosikivbywxjzvr.supabase.co",
+            port="5432",
+            dbname="postgres",
+            user="postgres",
+            password="Yunus.2002"
         )
-        
         conn.autocommit = True
         print("Connected to Supabase PostgreSQL")
+
+        # Create tables if they don't exist
+        create_supabase_tables(conn)
         return conn
     except Exception as e:
         print(f"Supabase PostgreSQL connection error: {e}")
         return None
 
-def create_supabase_tables(pg_conn):
-    """Create tables in Supabase PostgreSQL"""
-    if not pg_conn:
-        return False
-    
+def create_supabase_tables(conn):
+    """Create necessary tables in Supabase"""
     try:
-        cursor = pg_conn.cursor()
-        
-        # Users table
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            last_login TIMESTAMP
-        )
-        ''')
-        
-        # Files table
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS files (
-            id SERIAL PRIMARY KEY,
-            filename TEXT NOT NULL,
-            filepath TEXT NOT NULL,
-            filesize INTEGER,
-            detected_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            processed BOOLEAN DEFAULT FALSE,
-            current_revision INTEGER DEFAULT 1
-        )
-        ''')
-        
-        # File revisions table
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS file_revisions (
-            id SERIAL PRIMARY KEY,
-            file_id INTEGER NOT NULL,
-            revision_number INTEGER NOT NULL,
-            revision_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            revision_path TEXT NOT NULL,
-            FOREIGN KEY (file_id) REFERENCES files(id)
-        )
-        ''')
-        
-        # Comparison results table
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS comparisons (
-            id SERIAL PRIMARY KEY,
-            file_id INTEGER NOT NULL,
-            revision1_id INTEGER NOT NULL,
-            revision2_id INTEGER NOT NULL,
-            changes_count INTEGER,
-            comparison_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (file_id) REFERENCES files(id),
-            FOREIGN KEY (revision1_id) REFERENCES file_revisions(id),
-            FOREIGN KEY (revision2_id) REFERENCES file_revisions(id)
-        )
-        ''')
-        
-        # Comparison results table
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS comparison_results (
-            id SERIAL PRIMARY KEY,
-            type TEXT NOT NULL,
-            row_num INTEGER,
-            column_name TEXT,
-            old_value TEXT,
-            new_value TEXT,
-            change_type TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
+        cursor = conn.cursor()
 
-        # Activity logs table
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS activity_logs (
-            id SERIAL PRIMARY KEY,
-            username TEXT,
-            activity TEXT NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-        
-        print("Supabase PostgreSQL tables created successfully")
+        # Create comparison results table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS comparison_results (
+                id SERIAL PRIMARY KEY,
+                file1_name TEXT,
+                file2_name TEXT,
+                comparison_data JSONB,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Create user activity table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_activity (
+                id SERIAL PRIMARY KEY,
+                username TEXT,
+                action TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        conn.commit()
         return True
     except Exception as e:
-        print(f"Error creating tables in Supabase PostgreSQL: {e}")
+        print(f"Error creating Supabase tables: {e}")
         return False
 
 def migrate_table(sqlite_conn, pg_conn, table_name, columns, column_types=None):
@@ -209,11 +140,6 @@ def main():
     
     if not pg_conn:
         print("Failed to connect to Supabase PostgreSQL database")
-        return
-    
-    # Create tables in Supabase PostgreSQL
-    if not create_supabase_tables(pg_conn):
-        print("Failed to create tables in Supabase PostgreSQL")
         return
     
     # Migrate data

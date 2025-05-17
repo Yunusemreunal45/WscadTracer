@@ -357,19 +357,27 @@ class ExcelProcessor:
     def save_to_supabase(self, comparison_results, supabase_conn):
         """Save comparison results to Supabase"""
         try:
+            if not supabase_conn:
+                print("Supabase bağlantısı bulunamadı")
+                return False
+                
             cursor = supabase_conn.cursor()
             
-            # Dosya bilgilerini kaydet
+            # Karşılaştırma sonuçlarını JSON olarak kaydet
             cursor.execute("""
-                INSERT INTO files (filename, filepath, filesize, detected_time)
-                VALUES (%s, %s, %s, %s) RETURNING id
+                INSERT INTO comparison_results 
+                (file1_name, file2_name, comparison_data, created_at)
+                VALUES (%s, %s, %s::jsonb, %s)
             """, (
+                os.path.basename(comparison_results['file1']['filepath']),
                 os.path.basename(comparison_results['file2']['filepath']),
-                comparison_results['file2']['filepath'],
-                os.path.getsize(comparison_results['file2']['filepath']),
+                json.dumps(comparison_results.get('comparison_data', [])),
                 datetime.now()
             ))
-            file_id = cursor.fetchone()[0]
+            
+            supabase_conn.commit()
+            print("Karşılaştırma sonuçları Supabase'e kaydedildi")
+            return True
             
             # Karşılaştırma sonuçlarını kaydet
             comparison_data = comparison_results.get('comparison_data', [])
