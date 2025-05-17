@@ -117,24 +117,61 @@ if auth_status:
         st.header(f"Welcome, {username}")
         
         # Directory monitoring section
-        st.subheader("Directory Monitoring")
-        directory = st.text_input("Directory to monitor", value=os.path.expanduser("~/Downloads"))
+        st.subheader("Dizin İzleme")
+        
+        # Default directory options
+        default_dirs = {
+            "Downloads": os.path.expanduser("~/Downloads"),
+            "Documents": os.path.expanduser("~/Documents"),
+            "Desktop": os.path.expanduser("~/Desktop"),
+            "Custom": "custom"
+        }
+        
+        selected_dir_option = st.selectbox(
+            "İzlenecek dizini seçin",
+            options=list(default_dirs.keys()),
+            index=0
+        )
+        
+        if selected_dir_option == "Custom":
+            directory = st.text_input("Özel dizin yolu girin")
+        else:
+            directory = default_dirs[selected_dir_option]
+            st.text(f"Seçilen dizin: {directory}")
+        
+        # Directory validation
+        is_valid_dir = os.path.exists(directory) if directory else False
         
         col1, col2 = st.columns(2)
         with col1:
             if not st.session_state.monitoring:
-                if st.button("Start Monitoring"):
-                    start_monitoring(directory)
+                start_button = st.button(
+                    "İzlemeyi Başlat",
+                    disabled=not is_valid_dir
+                )
+                if start_button:
+                    if is_valid_dir:
+                        start_monitoring(directory)
+                    else:
+                        st.error("Geçerli bir dizin seçin")
+        
         with col2:
             if st.session_state.monitoring:
-                if st.button("Stop Monitoring"):
+                if st.button("İzlemeyi Durdur"):
                     stop_monitoring()
         
-        # Show monitoring status
+        # Show monitoring status and current directory
         if st.session_state.monitoring:
-            st.success("Directory monitoring is active")
+            st.success(f"Dizin izleme aktif: {file_monitor.get_monitored_directory() if file_monitor else directory}")
+            
+            # Show recent file activities
+            recent_files = db.get_recent_files(limit=5)
+            if recent_files:
+                st.subheader("Son Dosya Aktiviteleri")
+                for file in recent_files:
+                    st.text(f"📄 {file[1]} - {file[4]}")
         else:
-            st.warning("Monitoring is inactive")
+            st.warning("Dizin izleme aktif değil")
 
         # Auto-comparison button (New Feature)
         st.subheader("Quick Auto-Compare")
