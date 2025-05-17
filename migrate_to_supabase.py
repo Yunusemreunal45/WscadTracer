@@ -21,17 +21,26 @@ def get_supabase_connection():
     # Load environment variables from .env file
     load_dotenv()
     
-    # Get database URL from environment variable
-    db_url = os.getenv("DATABASE_URL")
-    
-    if not db_url:
-        print("DATABASE_URL environment variable not set")
-        return None
-    
     try:
-        # Connect to Supabase PostgreSQL
+        # Connect to Supabase PostgreSQL using direct connection parameters
         print("Connecting to Supabase PostgreSQL...")
-        conn = psycopg2.connect(db_url)
+        
+        # These should match your Supabase project settings
+        host = "db.jnyxsuosikivbywxjzvr.supabase.co"
+        port = "5432"
+        database = "postgres"
+        user = "postgres"
+        password = "Yunus.2002"  # Bu şifreyi gerçek bir uygulamada bu şekilde saklamak güvenlik riski oluşturur
+        
+        # Connect with direct parameters
+        conn = psycopg2.connect(
+            host=host,
+            port=port,
+            dbname=database,
+            user=user,
+            password=password
+        )
+        
         conn.autocommit = True
         print("Connected to Supabase PostgreSQL")
         return conn
