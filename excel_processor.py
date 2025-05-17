@@ -486,23 +486,48 @@ class ExcelProcessor:
             return False
 
     def generate_comparison_report(self, comparison_results):
-        """Generate an Excel report from comparison results"""
+        """Generate an Excel report from comparison results with detailed user information"""
         try:
             # Create a new workbook
             wb = openpyxl.Workbook()
             ws = wb.active
             ws.title = "Comparison Results"
 
+            # Add report header
+            ws.merge_cells('A1:H1')
+            header_cell = ws.cell(row=1, column=1, value="WSCAD Excel Comparison Report")
+            header_cell.font = Font(bold=True, size=14)
+            header_cell.alignment = openpyxl.styles.Alignment(horizontal='center')
+
+            # Add timestamp and user info
+            ws.cell(row=2, column=1, value=f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            
             # Add headers
-            headers = ["Type", "Row", "Column", "Original Value", "New Value", "Change Type", "Modified By", "Modified Date"]
+            headers = ["Type", "Row/Element", "Column", "Original Value", "New Value", "Change Type", "Modified By", "Modified Date"]
+            row_offset = 4  # Start data from row 4
             for col_idx, header in enumerate(headers, 1):
                 cell = ws.cell(row=1, column=col_idx, value=header)
                 cell.font = Font(bold=True)
 
-            # Add data
-            for row_idx, diff in enumerate(comparison_results, 2):
-                ws.cell(row=row_idx, column=1, value=diff.get('type', ''))
-                ws.cell(row=row_idx, column=2, value=diff.get('row', '') if 'row' in diff else diff.get('element', ''))
+            # Add data with improved formatting
+            for row_idx, diff in enumerate(comparison_results, row_offset):
+                # Type column with better descriptions
+                type_cell = ws.cell(row=row_idx, column=1)
+                type_value = diff.get('type', '')
+                if type_value == 'structure':
+                    type_cell.value = "Structure Change"
+                elif type_value == 'cell':
+                    type_cell.value = "Cell Change"
+                type_cell.font = Font(bold=True)
+
+                # Row/Element column
+                location_cell = ws.cell(row=row_idx, column=2)
+                if 'row' in diff:
+                    location_cell.value = f"Row {diff['row']}"
+                else:
+                    location_cell.value = diff.get('element', '')
+
+                # Column name
                 ws.cell(row=row_idx, column=3, value=diff.get('column', ''))
 
                 # Original value cell

@@ -376,8 +376,38 @@ if auth_status:
                         # Create DataFrame from comparison results
                         diff_df = pd.DataFrame(st.session_state.comparison_result)
 
-                        # Display differences
-                        st.dataframe(diff_df, use_container_width=True)
+                        # Display differences with enhanced information
+                        st.markdown("### Detailed Changes")
+                        
+                        # Show summary statistics
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Total Changes", len(diff_df))
+                        with col2:
+                            structure_changes = len(diff_df[diff_df['type'] == 'structure'])
+                            st.metric("Structure Changes", structure_changes)
+                        with col3:
+                            cell_changes = len(diff_df[diff_df['type'] == 'cell'])
+                            st.metric("Cell Changes", cell_changes)
+                        
+                        # Format the DataFrame for display
+                        diff_df['timestamp'] = pd.to_datetime(diff_df['modified_date'])
+                        diff_df['change_description'] = diff_df.apply(
+                            lambda x: f"{x['type'].title()} change by {x['modified_by']} at {x['timestamp'].strftime('%Y-%m-%d %H:%M')}", 
+                            axis=1
+                        )
+                        
+                        # Display the formatted DataFrame
+                        st.dataframe(
+                            diff_df[['change_description', 'row', 'column', 'value1', 'value2', 'change_type']],
+                            column_config={
+                                'change_description': 'Change Details',
+                                'value1': 'Original Value',
+                                'value2': 'New Value',
+                                'change_type': 'Change Type'
+                            },
+                            use_container_width=True
+                        )
 
                         # Download comparison report as Excel
                         if st.download_button(
