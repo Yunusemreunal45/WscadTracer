@@ -127,7 +127,6 @@ class FileMonitor:
                             if supabase_conn:
                                 self.excel_processor.save_to_supabase({
                                     'file1': latest_files[0],
-                                    'file2'file1': latest_files[0],
                                     'file2': latest_files[1],
                                     'comparison_data': comparison_result
                                 }, supabase_conn)
