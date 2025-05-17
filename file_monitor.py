@@ -22,8 +22,12 @@ class ExcelFileHandler(FileSystemEventHandler):
             if os.path.exists(event.src_path) and os.access(event.src_path, os.R_OK):
                 # Excel dosyasını binary modda açmayı dene
                 try:
-                    with open(event.src_path, 'rb'):
-                        pass
+                    # Dosyanın tam olarak yazılmasını bekle
+                    time.sleep(1)
+                    with open(event.src_path, 'rb') as f:
+                        # Dosyanın okunabilir olduğunu kontrol et
+                        f.read(1)
+                    print(f"Yeni Excel dosyası algılandı: {os.path.basename(event.src_path)}")
                 except Exception as e:
                     print(f"Dosya okuma hatası: {e}")
                     return
