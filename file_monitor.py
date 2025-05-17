@@ -85,6 +85,19 @@ class FileMonitor:
     def start_monitoring(self):
         if not os.path.exists(self.directory):
             raise FileNotFoundError(f"İzlenecek dizin bulunamadı veya erişilemez durumda: {self.directory}. Lütfen geçerli bir dizin seçin.")
+
+        # Önce attached_assets klasöründeki dosyaları kontrol et
+        assets_dir = "attached_assets"
+        if os.path.exists(assets_dir):
+            print(f"Attached assets klasöründen dosyalar yükleniyor...")
+            for filename in os.listdir(assets_dir):
+                if filename.endswith(('.xlsx', '.xls')):
+                    src_path = os.path.join(assets_dir, filename)
+                    dst_path = os.path.join(self.directory, filename)
+                    if not os.path.exists(dst_path):
+                        import shutil
+                        shutil.copy2(src_path, dst_path)
+                        print(f"Dosya kopyalandı: {filename}")
             
         # Supabase bağlantısını başlat
         try:
