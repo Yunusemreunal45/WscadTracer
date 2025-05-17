@@ -107,26 +107,40 @@ class FileMonitor:
         # Mevcut Excel dosyalarını tara
         self.scan_existing_files(event_handler)
         
-        # Son iki Excel dosyasını karşılaştır
+        # Önce Excel dosyalarını karşılaştır
         try:
             if self.excel_processor:
-                result = self.excel_processor.auto_compare_latest_files(self.directory)
-                if result:
-                    # Supabase'e kaydet
-                    try:
-                        from migrate_to_supabase import get_supabase_connection
-                        supabase_conn = get_supabase_connection()
-                        if supabase_conn:
-                            if 'comparison_data' in result:
-                                self.excel_processor.save_to_supabase(result['comparison_data'], supabase_conn)
-                                print("Karşılaştırma sonuçları Supabase'e kaydedildi")
-                            supabase_conn.close()
-                    except Exception as e:
-                        print(f"Supabase kayıt hatası: {e}")
+                excel_files = self.excel_processor.list_excel_files(self.directory)
+                if len(excel_files) >= 2:
+                    # En son 2 Excel dosyasını karşılaştır
+                    latest_files = excel_files[:2]
+                    comparison_result = self.excel_processor.compare_excel_files(
+                        latest_files[0]['filepath'],
+                        latest_files[1]['filepath']
+                    )
                     
-                    print("Karşılaştırma sonucu:", result)
-                    return result
+                    if comparison_result:
+                        # Supabase'e kaydet
+                        try:
+                            from migrate_to_supabase import get_supabase_connection
+                            supabase_conn = get_supabase_connection()
+                            if supabase_conn:
+                                self.excel_processor.save_to_supabase({
+                                    'file1': latest_files[0],
+                                    'file2': latest_files[1],
+                                    'comparison_data': comparison_result
+                                }, supabase_conn)
+                                print("Karşılaştırma sonuçları Supabase'e kaydedildi")
+                                supabase_conn.close()
+                        except Exception as e:
+                            print(f"Supabase kayıt hatası: {e}")
+                        
+                        print("Excel karşılaştırma sonucu:", comparison_result)
+                        return comparison_result
+                else:
+                    print("Dizinde en az iki Excel dosyası bulunamadı")
         except Exception as e:
+            print(f"Excel karşılaştırma hatası: {e}")
             print(f"Karşılaştırma hatası: {e}")
             return None
         print(f"Dizin izlemeye başlandı: {self.directory}")
