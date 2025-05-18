@@ -309,10 +309,13 @@ if auth_status:
                                                 'comparison_data': comparison_result
                                             }, supabase_conn)
                                             if save_result:
-                                                st.success("Comparison results saved to Supabase successfully")
-                                                log_activity("Saved comparison results to Supabase", db, username)
+                                                st.success("Karşılaştırma sonuçları başarıyla Supabase'e CSV formatında kaydedildi!")
+                                                st.info(f"Karşılaştırılan dosyalar:\n- {file1_data['filename']}\n- {file2_data['filename']}")
+                                                log_activity("Saved comparison results to Supabase as CSV", db, username)
                                             else:
-                                                st.error("Failed to save to Supabase")
+                                                st.error("Supabase'e kaydetme başarısız oldu")
+                                                st.warning("Lütfen bağlantıyı kontrol edin ve tekrar deneyin")
+
                                     except Exception as e:
                                         st.error(f"Error saving to Supabase: {str(e)}")
 
