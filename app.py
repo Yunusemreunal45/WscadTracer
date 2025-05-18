@@ -227,6 +227,14 @@ if auth_status:
     with tab1:
         st.header("Excel Files")
 
+        # Add auto-refresh
+        if 'refresh_counter' not in st.session_state:
+            st.session_state.refresh_counter = 0
+
+        # Her 1 saniyede bir yenile
+        time.sleep(1)
+        st.session_state.refresh_counter += 1
+
         # Fetch all files from the database
         files = db.get_all_files()
 
@@ -744,7 +752,7 @@ if auth_status:
                 if file_data:
                     try:
                         # Process the file for export
-                        export_data = excel_processor.prepare_for_export(file_data['filepath'])
+                        export_data = excel_processor.prepare_forexport(file_data['filepath'])
 
                         # Show export data preview
                         st.subheader("Export Data Preview")

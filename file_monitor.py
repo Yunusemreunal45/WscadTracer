@@ -18,7 +18,18 @@ class ExcelFileHandler(FileSystemEventHandler):
     def on_created(self, event):
         if not event.is_directory and self.is_excel_file(event.src_path):
             print(f"Yeni Excel dosyası algılandı: {event.src_path}")
-            time.sleep(1)  # Dosyanın tam yazılmasını bekle
+            # Dosyanın yazılmasını bekle
+            max_attempts = 5
+            for attempt in range(max_attempts):
+                try:
+                    if os.path.exists(event.src_path) and os.access(event.src_path, os.R_OK):
+                        with open(event.src_path, 'rb') as f:
+                            f.read(1)
+                        break
+                except:
+                    if attempt < max_attempts - 1:
+                        time.sleep(0.2)
+                    continue
 
             # Otomatik karşılaştırma yap
             if self.excel_processor:
