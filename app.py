@@ -559,14 +559,30 @@ if auth_status:
                             st.subheader("Comparison History")
                             comp_data = []
                             for comp in comparisons:
+                                report_path = os.path.join('comparison_reports', f"comparison_report_{comp[6].strftime('%Y%m%d_%H%M%S')}.xlsx")
+                                
                                 comp_data.append({
                                     "Date": comp[6],
                                     "Changes": comp[4],
                                     "Rev1": f"Rev {db.get_revision_by_id(comp[3])['revision_number']}",
-                                    "Rev2": f"Rev {db.get_revision_by_id(comp[4])['revision_number']}"
+                                    "Rev2": f"Rev {db.get_revision_by_id(comp[4])['revision_number']}",
+                                    "Report": report_path if os.path.exists(report_path) else None
                                 })
-                            comp_df = pd.DataFrame(comp_data)
-                            st.dataframe(comp_df, use_container_width=True)
+                            
+                            # Display comparison history with download buttons
+                            for comp in comp_data:
+                                with st.expander(f"Comparison from {comp['Date']} - {comp['Changes']} changes"):
+                                    st.write(f"Comparing {comp['Rev1']} with {comp['Rev2']}")
+                                    if comp['Report'] and os.path.exists(comp['Report']):
+                                        with open(comp['Report'], 'rb') as f:
+                                            st.download_button(
+                                                label="Download Comparison Report",
+                                                data=f.read(),
+                                                file_name=os.path.basename(comp['Report']),
+                                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                            )
+                                    else:
+                                        st.warning("Comparison report not found")
                     else:
                         st.info("No revisions found for this file")
             else:

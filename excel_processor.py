@@ -381,6 +381,19 @@ class ExcelProcessor:
     def save_comparison_as_revision(self, comparison_results, db):
         """Save comparison results as a new revision"""
         try:
+            # Generate and save comparison report
+            report_data = self.generate_comparison_report(comparison_results.get('comparison_data', []))
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            report_filename = f"comparison_report_{timestamp}.xlsx"
+            report_path = os.path.join('comparison_reports', report_filename)
+            
+            # Ensure directory exists
+            os.makedirs('comparison_reports', exist_ok=True)
+            
+            # Save report
+            with open(report_path, 'wb') as f:
+                f.write(report_data.getvalue())
+
             # Get file information
             file1_path = comparison_results['file1']['filepath']
             file2_path = comparison_results['file2']['filepath']
