@@ -267,9 +267,9 @@ if auth_status:
                         file2_data = db.get_file_by_id(file2_id)
 
                         if file1_data and file2_data:
-                    try:
-                        # Directly compare the two Excel files
-                        comparison_result = excel_processor.compare_excel_files(
+                            try:
+                                # Directly compare the two Excel files
+                                comparison_result = excel_processor.compare_excel_files(
                             file1_data['filepath'],
                             file2_data['filepath']
                         )
