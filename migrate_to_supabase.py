@@ -57,7 +57,8 @@ def create_supabase_tables(conn):
                 id SERIAL PRIMARY KEY,
                 file1_name TEXT,
                 file2_name TEXT,
-                comparison_data JSONB,
+                comparison_data TEXT,
+                data_format TEXT DEFAULT 'csv',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)

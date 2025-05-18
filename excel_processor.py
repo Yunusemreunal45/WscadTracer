@@ -452,15 +452,22 @@ class ExcelProcessor:
 
             # Karşılaştırma sonuçlarını JSON olarak kaydet
             try:
+                # Convert comparison data to CSV format
+                comparison_data = comparison_results.get('comparison_data', [])
+                df = pd.DataFrame(comparison_data)
+                csv_buffer = io.StringIO()
+                df.to_csv(csv_buffer, index=False)
+                csv_data = csv_buffer.getvalue()
+                
                 cursor.execute("""
                     INSERT INTO comparison_results 
-                    (file1_name, file2_name, comparison_data, created_at)
-                    VALUES (%s, %s, %s::jsonb, %s)
+                    (file1_name, file2_name, comparison_data, created_at, data_format)
+                    VALUES (%s, %s, %s, %s, 'csv')
                     RETURNING id
                 """, (
                     os.path.basename(comparison_results['file1']['filepath']),
                     os.path.basename(comparison_results['file2']['filepath']),
-                    json.dumps(comparison_results.get('comparison_data', [])),
+                    csv_data,
                     datetime.now()
                 ))
                 result_id = cursor.fetchone()[0]
