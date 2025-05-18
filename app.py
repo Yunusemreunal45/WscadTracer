@@ -110,7 +110,7 @@ if auth_status:
 
     # Main application
     st.title("WSCAD Excel Comparison and Process Tracking System")
-    
+
     # Help/Guide section
     with st.sidebar:
         with st.expander("📚 Nasıl Kullanılır?"):
@@ -119,13 +119,13 @@ if auth_status:
             1. **Dosya Seçimi**: 'Files' sekmesinden Excel dosyalarınızı seçin
             2. **Karşılaştırma**: İki dosyayı seçip karşılaştırın
             3. **Sonuçlar**: Değişiklikleri detaylı raporlarda görüntüleyin
-            
+
             ### İpuçları
             - Otomatik karşılaştırma için 'Auto-Compare' kullanın
             - Revizyon geçmişini 'History' sekmesinde takip edin
             - ERP'ye aktarım için 'Export to ERP' sekmesini kullanın
             """)
-            
+
         # System status indicators
         st.markdown("### 📊 Sistem Durumu")
         if st.session_state.monitoring:
@@ -403,12 +403,12 @@ if auth_status:
 
                         # Display differences with enhanced information
                         st.markdown("### 📊 Detaylı Değişiklik Raporu")
-                        
+
                         # Progress bar for changes
                         total_changes = len(diff_df)
                         st.progress(min(total_changes / 100, 1.0), 
                                   text=f"Toplam {total_changes} değişiklik tespit edildi")
-                        
+
                         # Visual metrics
                         metrics_cols = st.columns(4)
                         with metrics_cols[0]:
@@ -419,7 +419,7 @@ if auth_status:
                             st.metric("➕ Eklenen", len(diff_df[diff_df['change_type'] == 'added']))
                         with metrics_cols[3]:
                             st.metric("➖ Silinen", len(diff_df[diff_df['change_type'] == 'removed']))
-                        
+
                         # Show summary statistics
                         col1, col2, col3 = st.columns(3)
                         with col1:
@@ -430,14 +430,14 @@ if auth_status:
                         with col3:
                             cell_changes = len(diff_df[diff_df['type'] == 'cell'])
                             st.metric("Cell Changes", cell_changes)
-                        
+
                         # Format the DataFrame for display
                         diff_df['timestamp'] = pd.to_datetime(diff_df['modified_date'])
                         diff_df['change_description'] = diff_df.apply(
                             lambda x: f"{x['type'].title()} change by {x['modified_by']} at {x['timestamp'].strftime('%Y-%m-%d %H:%M')}", 
                             axis=1
                         )
-                        
+
                         # Display the formatted DataFrame
                         st.dataframe(
                             diff_df[['change_description', 'row', 'column', 'value1', 'value2', 'change_type']],
@@ -580,52 +580,45 @@ if auth_status:
 
                 if selected_file:
                     file_id = file_options[selected_file]
-                    revisions = db.get_file_revisions(file_id)
+                    # Get comparison history for this file
+                    comparisons = db.get_comparison_history(file_id)
 
-                    if revisions:
-                        st.subheader("File Revisions")
-                        rev_data = []
-                        for rev in revisions:
-                            rev_data.append({
-                                "Revision": rev[2],
-                                "Date": rev[3],
-                                "Path": rev[4]
+                    if comparisons:
+                        st.subheader("Excel Karşılaştırma Revizyonları")
+                        comp_data = []
+                        for comp in comparisons:
+                            comp_data.append({
+                                "Karşılaştırma Tarihi": comp[6],
+                                "Değişiklik Sayısı": comp[5],
+                                "Eski Revizyon": f"Rev {db.get_revision_by_id(comp[3])[2]}",
+                                "Yeni Revizyon": f"Rev {db.get_revision_by_id(comp[4])[2]}"
                             })
-                        rev_df = pd.DataFrame(rev_data)
-                        st.dataframe(rev_df, use_container_width=True)
 
-                        # Show comparison history
-                        comparisons = db.get_comparison_history(file_id)
-                        if comparisons:
-                            st.subheader("Comparison History")
-                            comp_data = []
-                            for comp in comparisons:
-                                report_path = os.path.join('comparison_reports', f"comparison_report_{comp[6].strftime('%Y%m%d_%H%M%S')}.xlsx")
-                                
-                                comp_data.append({
-                                    "Date": comp[6],
-                                    "Changes": comp[4],
-                                    "Rev1": f"Rev {db.get_revision_by_id(comp[3])['revision_number']}",
-                                    "Rev2": f"Rev {db.get_revision_by_id(comp[4])['revision_number']}",
-                                    "Report": report_path if os.path.exists(report_path) else None
-                                })
-                            
-                            # Display comparison history with download buttons
-                            for comp in comp_data:
-                                with st.expander(f"Comparison from {comp['Date']} - {comp['Changes']} changes"):
-                                    st.write(f"Comparing {comp['Rev1']} with {comp['Rev2']}")
-                                    if comp['Report'] and os.path.exists(comp['Report']):
-                                        with open(comp['Report'], 'rb') as f:
-                                            st.download_button(
-                                                label="Download Comparison Report",
-                                                data=f.read(),
-                                                file_name=os.path.basename(comp['Report']),
-                                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                            )
-                                    else:
-                                        st.warning("Comparison report not found")
+                        if comp_data:
+                            comp_df = pd.DataFrame(comp_data)
+                            st.dataframe(comp_df, use_container_width=True)
+
+                            # Karşılaştırma detayları için seçim kutusu
+                            selected_comp = st.selectbox(
+                                "Karşılaştırma detaylarını görüntüle",
+                                range(len(comp_data)),
+                                format_func=lambda i: f"{comp_data[i]['Karşılaştırma Tarihi']} ({comp_data[i]['Değişiklik Sayısı']} değişiklik)"
+                            )
+
+                            if st.button("Detayları Göster"):
+                                comparison = comparisons[selected_comp]
+                                # Karşılaştırma raporunu görüntüle
+                                report_path = os.path.join('comparison_reports', f"comparison_report_{comparison[6].strftime('%Y%m%d_%H%M%S')}.xlsx")
+                                if os.path.exists(report_path):
+                                    with open(report_path, 'rb') as f:
+                                        st.download_button(
+                                            "Karşılaştırma Raporunu İndir",
+                                            f,
+                                            file_name=f"comparison_report_{comparison[6].strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                        )
                     else:
-                        st.info("No revisions found for this file")
+                        st.info("Bu dosya için henüz karşılaştırma revizyonu bulunmuyor")
             else:
                 st.info("No files found in the system")
 
