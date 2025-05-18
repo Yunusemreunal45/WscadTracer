@@ -266,7 +266,7 @@ if auth_status:
                         file1_data = db.get_file_by_id(file1_id)
                         file2_data = db.get_file_by_id(file2_id)
 
-                if file1_data and file2_data:
+                        if file1_data and file2_data:
                     try:
                         # Directly compare the two Excel files
                         comparison_result = excel_processor.compare_excel_files(
