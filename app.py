@@ -270,11 +270,12 @@ if auth_status:
                             try:
                                 # Directly compare the two Excel files
                                 comparison_result = excel_processor.compare_excel_files(
-                            file1_data['filepath'],
-                            file2_data['filepath']
-                        )
-
-                        st.session_state.comparison_result = comparison_result
+                                    file1_data['filepath'],
+                                    file2_data['filepath']
+                                )
+                                st.session_state.comparison_result = comparison_result
+                            except Exception as e:
+                                st.error(f"Error comparing files: {str(e)}")
 
                         # Display comparison results
                         st.success(f"Compared {file1_data['filename']} with {file2_data['filename']}")
