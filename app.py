@@ -110,6 +110,28 @@ if auth_status:
 
     # Main application
     st.title("WSCAD Excel Comparison and Process Tracking System")
+    
+    # Help/Guide section
+    with st.sidebar:
+        with st.expander("📚 Nasıl Kullanılır?"):
+            st.markdown("""
+            ### Hızlı Başlangıç Rehberi
+            1. **Dosya Seçimi**: 'Files' sekmesinden Excel dosyalarınızı seçin
+            2. **Karşılaştırma**: İki dosyayı seçip karşılaştırın
+            3. **Sonuçlar**: Değişiklikleri detaylı raporlarda görüntüleyin
+            
+            ### İpuçları
+            - Otomatik karşılaştırma için 'Auto-Compare' kullanın
+            - Revizyon geçmişini 'History' sekmesinde takip edin
+            - ERP'ye aktarım için 'Export to ERP' sekmesini kullanın
+            """)
+            
+        # System status indicators
+        st.markdown("### 📊 Sistem Durumu")
+        if st.session_state.monitoring:
+            st.success("✅ Dizin İzleme Aktif")
+        else:
+            st.warning("⚠️ Dizin İzleme Pasif")
 
     # Sidebar
     with st.sidebar:
@@ -236,11 +258,13 @@ if auth_status:
                 save_as_revision = st.checkbox("Save as Revision", value=True)
 
             if compare_button:
-                file1_id = file_ids[selected_file_index]
-                file2_id = file_ids[selected_file_index2]
+                with st.spinner("📊 Dosyalar karşılaştırılıyor..."):
+                    try:
+                        file1_id = file_ids[selected_file_index]
+                        file2_id = file_ids[selected_file_index2]
 
-                file1_data = db.get_file_by_id(file1_id)
-                file2_data = db.get_file_by_id(file2_id)
+                        file1_data = db.get_file_by_id(file1_id)
+                        file2_data = db.get_file_by_id(file2_id)
 
                 if file1_data and file2_data:
                     try:
@@ -377,7 +401,23 @@ if auth_status:
                         diff_df = pd.DataFrame(st.session_state.comparison_result)
 
                         # Display differences with enhanced information
-                        st.markdown("### Detailed Changes")
+                        st.markdown("### 📊 Detaylı Değişiklik Raporu")
+                        
+                        # Progress bar for changes
+                        total_changes = len(diff_df)
+                        st.progress(min(total_changes / 100, 1.0), 
+                                  text=f"Toplam {total_changes} değişiklik tespit edildi")
+                        
+                        # Visual metrics
+                        metrics_cols = st.columns(4)
+                        with metrics_cols[0]:
+                            st.metric("💫 Toplam", total_changes)
+                        with metrics_cols[1]:
+                            st.metric("🔄 Değişiklik", len(diff_df[diff_df['change_type'] == 'modified']))
+                        with metrics_cols[2]:
+                            st.metric("➕ Eklenen", len(diff_df[diff_df['change_type'] == 'added']))
+                        with metrics_cols[3]:
+                            st.metric("➖ Silinen", len(diff_df[diff_df['change_type'] == 'removed']))
                         
                         # Show summary statistics
                         col1, col2, col3 = st.columns(3)
