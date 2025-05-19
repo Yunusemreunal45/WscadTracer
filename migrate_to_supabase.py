@@ -4,6 +4,7 @@ import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 from datetime import datetime
+import json
 
 def get_sqlite_connection(db_file="wscad_comparison.db"):
     """Get connection to SQLite database"""
@@ -19,6 +20,7 @@ def get_sqlite_connection(db_file="wscad_comparison.db"):
 def get_supabase_connection():
     """Get connection to Supabase PostgreSQL database"""
     try:
+        load_dotenv()
         if not all([
             os.getenv('SUPABASE_HOST'),
             os.getenv('SUPABASE_DATABASE'),
@@ -51,7 +53,31 @@ def create_supabase_tables(conn):
     try:
         cursor = conn.cursor()
 
-        # Create comparison results table
+        # Create files table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS files (
+                id SERIAL PRIMARY KEY,
+                filename TEXT NOT NULL,
+                filepath TEXT NOT NULL,
+                filesize INTEGER,
+                detected_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                processed BOOLEAN DEFAULT FALSE,
+                current_revision INTEGER DEFAULT 1
+            )
+        """)
+
+        # Create file_revisions table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS file_revisions (
+                id SERIAL PRIMARY KEY,
+                file_id INTEGER REFERENCES files(id),
+                revision_number INTEGER NOT NULL,
+                revision_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                revision_path TEXT NOT NULL
+            )
+        """)
+
+        # Create comparison_results table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS comparison_results (
                 id SERIAL PRIMARY KEY,
@@ -63,17 +89,21 @@ def create_supabase_tables(conn):
             )
         """)
 
-        # Create user activity table
+        # Create comparison_history table
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS user_activity (
+            CREATE TABLE IF NOT EXISTS comparison_history (
                 id SERIAL PRIMARY KEY,
-                username TEXT,
-                action TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                file_id INTEGER REFERENCES files(id),
+                revision1_id INTEGER REFERENCES file_revisions(id),
+                revision2_id INTEGER REFERENCES file_revisions(id),
+                changes_count INTEGER,
+                comparison_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                comparison_data JSONB
             )
         """)
 
         conn.commit()
+        print("Supabase tables created successfully")
         return True
     except Exception as e:
         print(f"Error creating Supabase tables: {e}")
@@ -141,27 +171,32 @@ def migrate_data(sqlite_conn, pg_conn):
 
 def main():
     """Main migration function"""
-    # Get connections
     sqlite_conn = get_sqlite_connection()
-    pg_conn = get_supabase_connection()
+    conn = get_supabase_connection()
+    if not conn:
+        print("Failed to connect to Supabase")
+        return
 
     if not sqlite_conn:
         print("Failed to connect to SQLite database")
         return
 
-    if not pg_conn:
-        print("Failed to connect to Supabase PostgreSQL database")
-        return
-
-    # Migrate data
-    if migrate_data(sqlite_conn, pg_conn):
-        print("Data migration successful")
+    if create_supabase_tables(conn):
+        print("Supabase setup completed successfully")
+        if sqlite_conn:
+            pg_conn = conn
+            if migrate_data(sqlite_conn, pg_conn):
+                print("Data migration successful")
+            else:
+                print("Data migration failed")
+        else:
+            print("Skipping data migration as SQLite connection failed.")
     else:
-        print("Data migration failed")
+        print("Supabase setup failed")
 
-    # Close connections
-    sqlite_conn.close()
-    close_supabase_connection(pg_conn)
+    if sqlite_conn:
+        sqlite_conn.close()
+    conn.close()
 
 if __name__ == "__main__":
     main()
