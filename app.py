@@ -719,8 +719,8 @@ if auth_status:
                     for comp in comparisons:
                         rev1 = db.get_revision_by_id(comp[3])
                             rev2 = db.get_revision_by_id(comp[4])
-                            comp_data.append({
-                                "Karşılaştırma Tarihi": comp[6],
+                        comp_data.append({
+                            "Karşılaştırma Tarihi": comp[6],
                                 "Değişiklik Sayısı": comp[5],
                                 "Eski Revizyon": f"Rev {rev1['revision_number'] if rev1 else 'N/A'}",
                                 "Yeni Revizyon": f"Rev {rev2['revision_number'] if rev2 else 'N/A'}"
