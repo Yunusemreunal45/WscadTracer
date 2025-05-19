@@ -749,10 +749,10 @@ if auth_status:
                                             file_name=f"comparison_report_{comparison[6].strftime('%Y%m%d_%H%M%S')}.xlsx",
                                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                                         )
-                    else:
-                        st.info("Bu dosya için henüz karşılaştırma revizyonu bulunmuyor")
-            else:
-                st.info("No files found in the system")
+                        else:
+                            st.info("Bu dosya için henüz karşılaştırma revizyonu bulunmuyor")
+                else:
+                    st.info("No files found in the system")
 
         if not activity_logs:
             st.info("No activity recorded yet")
