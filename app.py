@@ -713,11 +713,11 @@ if auth_status:
             else:
                 st.warning("Karşılaştırma için en az iki Excel dosyası gerekli")
 
-                    if comparisons:
-                st.subheader("Excel Karşılaştırma Revizyonları")
-                        comp_data = []
-                        for comp in comparisons:
-                            rev1 = db.get_revision_by_id(comp[3])
+                if comparisons:
+                    st.subheader("Excel Karşılaştırma Revizyonları")
+                    comp_data = []
+                    for comp in comparisons:
+                        rev1 = db.get_revision_by_id(comp[3])
                             rev2 = db.get_revision_by_id(comp[4])
                             comp_data.append({
                                 "Karşılaştırma Tarihi": comp[6],
