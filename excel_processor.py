@@ -477,25 +477,25 @@ class ExcelProcessor:
             csv_data = csv_buffer.getvalue()
                 
                 cursor.execute("""
-                    INSERT INTO comparison_results 
-                    (file1_name, file2_name, comparison_data, created_at, data_format)
-                    VALUES (%s, %s, %s, %s, 'csv')
-                    RETURNING id
-                """, (
-                    os.path.basename(comparison_results['file1']['filepath']),
-                    os.path.basename(comparison_results['file2']['filepath']),
-                    csv_data,
-                    datetime.now()
-                ))
-                result_id = cursor.fetchone()[0]
-                print(f"Karşılaştırma sonucu kaydedildi (ID: {result_id})")
+                INSERT INTO comparison_results 
+                (file1_name, file2_name, comparison_data, created_at, data_format)
+                VALUES (%s, %s, %s, %s, 'csv')
+                RETURNING id
+            """, (
+                os.path.basename(comparison_results['file1']['filepath']),
+                os.path.basename(comparison_results['file2']['filepath']),
+                csv_data,
+                datetime.now()
+            ))
+            result_id = cursor.fetchone()[0]
+            print(f"Karşılaştırma sonucu kaydedildi (ID: {result_id})")
 
-                supabase_conn.commit()
-                print("Karşılaştırma sonuçları Supabase'e kaydedildi")
-                return True
-            except Exception as e:
-                print(f"Supabase kayıt hatası: {e}")
-                return False
+            supabase_conn.commit()
+            print("Karşılaştırma sonuçları Supabase'e kaydedildi")
+            return True
+        except Exception as e:
+            print(f"Supabase kayıt hatası: {e}")
+            return False
 
             # Karşılaştırma sonuçlarını kaydet
             comparison_data = comparison_results.get('comparison_data', [])
