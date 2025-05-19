@@ -662,31 +662,56 @@ if auth_status:
                 st.dataframe(logs_df, use_container_width=True)
 
         with tab4_2:
-            # Get all files for selection
-            files = db.get_all_files()
-            if files:
-                file_options = {f[1]: f[0] for f in files}  # filename: id mapping
-                selected_file = st.selectbox("Select File", options=list(file_options.keys()))
-
-                if selected_file:
-                    file_id = file_options[selected_file]
-                    # Get file revisions
-                    revisions = db.get_file_revisions(file_id)
+            st.subheader("Son Excel Karşılaştırma Raporu")
+            
+            # Get the latest comparison results
+            latest_files = db.get_recent_files(2)
+            
+            if len(latest_files) >= 2:
+                file1 = latest_files[0]
+                file2 = latest_files[1]
+                
+                st.write(f"Karşılaştırılan Dosyalar:")
+                st.write(f"1. {file1['filename']}")
+                st.write(f"2. {file2['filename']}")
+                
+                try:
+                    # Compare the files
+                    comparison_results = excel_processor.compare_excel_files(
+                        file1['filepath'],
+                        file2['filepath']
+                    )
                     
-                    if revisions:
-                        st.subheader("Dosya Revizyonları")
-                        rev_data = []
-                        for rev in revisions:
-                            rev_data.append({
-                                "Revizyon No": rev[2],
-                                "Tarih": rev[3],
-                                "Dosya Yolu": rev[4]
-                            })
-                        rev_df = pd.DataFrame(rev_data)
-                        st.dataframe(rev_df)
-                    
-                    # Get comparison history for this file
-                    comparisons = db.get_comparison_history(file_id)
+                    if comparison_results:
+                        # Display differences count
+                        st.info(f"Toplam {len(comparison_results)} değişiklik bulundu")
+                        
+                        # Create DataFrame from comparison results
+                        diff_df = pd.DataFrame([{
+                            'Değişiklik Tipi': 'Yapısal Değişiklik' if r['type'] == 'structure' else 'Hücre Değişikliği',
+                            'Sütun': r.get('column', ''),
+                            'Satır': r.get('row', ''),
+                            'Eski Değer': r.get('value1', ''),
+                            'Yeni Değer': r.get('value2', ''),
+                            'Değişiklik': r.get('change_type', '')
+                        } for r in comparison_results])
+                        
+                        st.dataframe(diff_df)
+                        
+                        # Generate and offer download of comparison report
+                        report_data = excel_processor.generate_comparison_report(comparison_results)
+                        st.download_button(
+                            "Karşılaştırma Raporunu İndir",
+                            report_data.getvalue(),
+                            file_name=f"comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                    else:
+                        st.success("Dosyalar arasında fark bulunmadı")
+                except Exception as e:
+                    st.error(f"Karşılaştırma hatası: {str(e)}")
+            else:
+                st.warning("Karşılaştırma için en az iki Excel dosyası gerekli")
 
                     if comparisons:
                         st.subheader("Excel Karşılaştırma Revizyonları")
