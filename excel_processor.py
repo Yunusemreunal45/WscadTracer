@@ -475,8 +475,8 @@ class ExcelProcessor:
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False, encoding='utf-8')
             csv_data = csv_buffer.getvalue()
-                
-                cursor.execute("""
+            
+            cursor.execute("""
                 INSERT INTO comparison_results 
                 (file1_name, file2_name, comparison_data, created_at, data_format)
                 VALUES (%s, %s, %s, %s, 'csv')
