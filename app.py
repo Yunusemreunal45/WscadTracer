@@ -670,6 +670,21 @@ if auth_status:
 
                 if selected_file:
                     file_id = file_options[selected_file]
+                    # Get file revisions
+                    revisions = db.get_file_revisions(file_id)
+                    
+                    if revisions:
+                        st.subheader("Dosya Revizyonları")
+                        rev_data = []
+                        for rev in revisions:
+                            rev_data.append({
+                                "Revizyon No": rev[2],
+                                "Tarih": rev[3],
+                                "Dosya Yolu": rev[4]
+                            })
+                        rev_df = pd.DataFrame(rev_data)
+                        st.dataframe(rev_df)
+                    
                     # Get comparison history for this file
                     comparisons = db.get_comparison_history(file_id)
 
@@ -677,11 +692,13 @@ if auth_status:
                         st.subheader("Excel Karşılaştırma Revizyonları")
                         comp_data = []
                         for comp in comparisons:
+                            rev1 = db.get_revision_by_id(comp[3])
+                            rev2 = db.get_revision_by_id(comp[4])
                             comp_data.append({
                                 "Karşılaştırma Tarihi": comp[6],
                                 "Değişiklik Sayısı": comp[5],
-                                "Eski Revizyon": f"Rev {db.get_revision_by_id(comp[3])[2]}",
-                                "Yeni Revizyon": f"Rev {db.get_revision_by_id(comp[4])[2]}"
+                                "Eski Revizyon": f"Rev {rev1['revision_number'] if rev1 else 'N/A'}",
+                                "Yeni Revizyon": f"Rev {rev2['revision_number'] if rev2 else 'N/A'}"
                             })
 
                         if comp_data:
