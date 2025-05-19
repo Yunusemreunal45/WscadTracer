@@ -125,7 +125,25 @@ class Database:
 
     def add_file(self, filename, filepath, filesize):
         try:
+            # Check if file exists in database
             existing_file = self.query_one("SELECT * FROM files WHERE filepath = ?", (filepath,))
+            
+            # Clean up old files if more than 10 exist
+            total_files = self.query_one("SELECT COUNT(*) as count FROM files")
+            if total_files and total_files['count'] > 10:
+                # Get oldest files
+                old_files = self.query("""
+                    SELECT id, filepath FROM files 
+                    ORDER BY detected_time ASC 
+                    LIMIT ?
+                """, (total_files['count'] - 10,))
+                
+                # Delete old files
+                for old_file in old_files:
+                    if os.path.exists(old_file['filepath']):
+                        os.remove(old_file['filepath'])
+                    self.execute("DELETE FROM files WHERE id = ?", (old_file['id'],))
+            
             if existing_file:
                 new_revision = existing_file['current_revision'] + 1
                 self.execute("UPDATE files SET current_revision = ? WHERE id = ?", (new_revision, existing_file['id']))

@@ -272,11 +272,39 @@ if auth_status:
             else:
                 st.info("Monitoring is stopped. Start monitoring to detect Excel files.")
         else:
-            # Create a DataFrame for display
+            # Create DataFrame from files
             files_df = pd.DataFrame(files, columns=["ID", "Filename", "Path", "Size (KB)", "Detected Time", "Processed", "Current Revision"])
 
-            # Display the files
-            st.dataframe(files_df, use_container_width=True)
+            # Display files in a more organized way with actions
+            st.subheader("📁 Detected Excel Files")
+
+            for _, row in files_df.iterrows():
+                with st.expander(f"📄 {row['Filename']} - Rev.{row['Current Revision']}"):
+                    col1, col2, col3 = st.columns([2,1,1])
+
+                    with col1:
+                        st.text(f"Size: {row['Size (KB)']} KB")
+                        st.text(f"Detected: {row['Detected Time']}")
+
+                    with col2:
+                        if st.button("🗑️ Delete", key=f"del_{row['ID']}"):
+                            # Delete file from database and disk
+                            db.execute("DELETE FROM files WHERE id = ?", (row['ID'],))
+                            if os.path.exists(row['Path']):
+                                os.remove(row['Path'])
+                            st.rerun()
+
+                    with col3:
+                        if st.button("💾 Archive", key=f"arch_{row['ID']}"):
+                            # Move file to archive folder
+                            archive_dir = "archived_files"
+                            os.makedirs(archive_dir, exist_ok=True)
+                            new_path = os.path.join(archive_dir, row['Filename'])
+                            if os.path.exists(row['Path']):
+                                import shutil
+                                shutil.move(row['Path'], new_path)
+                                db.execute("UPDATE files SET filepath = ? WHERE id = ?", (new_path, row['ID']))
+                            st.rerun()
 
             # Allow user to select a file
             file_ids = [f[0] for f in files]
@@ -734,6 +762,7 @@ if auth_status:
                     try:
                         # Create connection parameters
                         connection_params = {
+```python
                             "host": erp_host,
                             "port": erp_port,
                             "database": erp_db,
