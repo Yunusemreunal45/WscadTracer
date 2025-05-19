@@ -235,11 +235,14 @@ if auth_status:
         time.sleep(1)
         st.session_state.refresh_counter += 1
 
-        # Fetch all files from the database
-        files = db.get_all_files()
+        # Fetch all files only if monitoring is active
+        files = db.get_all_files() if st.session_state.monitoring else []
 
         if not files:
-            st.info("No files have been detected yet. Start monitoring a directory to detect WSCAD Excel files.")
+            if st.session_state.monitoring:
+                st.info("No files have been detected yet. Start monitoring a directory to detect WSCAD Excel files.")
+            else:
+                st.info("Monitoring is stopped. Start monitoring to detect Excel files.")
         else:
             # Create a DataFrame for display
             files_df = pd.DataFrame(files, columns=["ID", "Filename", "Path", "Size (KB)", "Detected Time", "Processed", "Current Revision"])

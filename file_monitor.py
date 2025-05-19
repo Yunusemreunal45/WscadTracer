@@ -242,6 +242,18 @@ class FileMonitor:
             self.observer.stop()
             self.observer.join()
             print("Dizin izleme durduruldu")
+            
+            # Clear processed files from handler
+            if self.observer.event_handlers:
+                for handler in self.observer.event_handlers:
+                    if isinstance(handler, ExcelFileHandler):
+                        handler.processed_files.clear()
+            
+            # Clear files from database
+            if self.db:
+                self.db.execute("DELETE FROM files")
+                self.db.execute("DELETE FROM file_revisions")
+                print("Dosya listesi temizlendi")
 
         self.stop_event.set()
 
