@@ -207,10 +207,38 @@ if auth_status:
         if st.button("Compare Latest Excel Files"):
             with st.spinner("Finding and comparing the latest Excel files..."):
                 try:
-                    auto_result = auto_compare_latest_files()
-                    if auto_result:
+                    latest_files = db.get_recent_files(2)
+                    if len(latest_files) >= 2:
+                        file1_data = latest_files[0]
+                        file2_data = latest_files[1]
+
+                        comparison_result = excel_processor.compare_excel_files(
+                            file1_data['filepath'],
+                            file2_data['filepath']
+                        )
+
+                        auto_result = {
+                            'file1': file1_data,
+                            'file2': file2_data,
+                            'comparison_data': comparison_result,
+                            'comparison_count': len(comparison_result)
+                        }
+
                         st.session_state.auto_comparison_result = auto_result
-                        st.success(f"Otomatik karşılaştırma tamamlandı! {auto_result['comparison_count']} fark bulundu")
+
+                        # Save to database
+                        comparison_id = db.save_comparison_result(
+                            file2_data['id'],
+                            file1_data['id'],
+                            file2_data['id'],
+                            len(comparison_result),
+                            datetime.now()
+                        )
+
+                        if comparison_id:
+                            st.success(f"Karşılaştırma tamamlandı! {len(comparison_result)} fark bulundu ve kaydedildi.")
+                    else:
+                        st.warning("En az iki dosya gerekli")
                 except Exception as e:
                     st.error(f"Otomatik karşılaştırma hatası: {str(e)}")
 
@@ -486,26 +514,38 @@ if auth_status:
             if st.button("Dosyaları Karşılaştır"):
                 with st.spinner("Excel dosyaları karşılaştırılıyor..."):
                     try:
-                        auto_result = auto_compare_latest_files()
-                        if auto_result:
-                            st.session_state.auto_comparison_result = auto_result
-                            st.success(f"Karşılaştırma tamamlandı! {auto_result['comparison_count']} fark bulundu.")
+                        latest_files = db.get_recent_files(2)
+                        if len(latest_files) >= 2:
+                            file1_data = latest_files[0]
+                            file2_data = latest_files[1]
 
-                            # Supabase'e kaydetme seçeneği
-                            try:
-                                from migrate_to_supabase import get_supabase_connection
-                                supabase_conn = get_supabase_connection()
-                                if supabase_conn:
-                                    save_result = excel_processor.save_to_supabase({
-                                        'file1': auto_result['file1'],
-                                        'file2': auto_result['file2'],
-                                        'comparison_data': auto_result.get('comparison_data', [])
-                                    }, supabase_conn)
-                                    if save_result:
-                                        st.success("Sonuçlar Supabase'e kaydedildi")
-                                        log_activity("Auto-comparison results saved to Supabase", db, username)
-                            except Exception as e:
-                                st.warning(f"Supabase'e kaydetme başarısız: {str(e)}")
+                            comparison_result = excel_processor.compare_excel_files(
+                                file1_data['filepath'],
+                                file2_data['filepath']
+                            )
+
+                            auto_result = {
+                                'file1': file1_data,
+                                'file2': file2_data,
+                                'comparison_data': comparison_result,
+                                'comparison_count': len(comparison_result)
+                            }
+
+                            st.session_state.auto_comparison_result = auto_result
+
+                            # Save to database
+                            comparison_id = db.save_comparison_result(
+                                file2_data['id'],
+                                file1_data['id'],
+                                file2_data['id'],
+                                len(comparison_result),
+                                datetime.now()
+                            )
+
+                            if comparison_id:
+                                st.success(f"Karşılaştırma tamamlandı! {len(comparison_result)} fark bulundu ve kaydedildi.")
+                        else:
+                            st.warning("En az iki dosya gerekli")
                     except Exception as e:
                         st.error(f"Karşılaştırma hatası: {str(e)}")
 
