@@ -831,7 +831,7 @@ if auth_status:
                 if file_data:
                     try:
                         # Process the file for export
-                        export_data = excel_processor.prepare_forexport(file_data['filepath'])
+                        export_data = excel_processor.prepare_for_export(file_data['filepath'])
 
                         # Show export data preview
                         st.subheader("Export Data Preview")
