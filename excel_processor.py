@@ -440,7 +440,7 @@ class ExcelProcessor:
             return False
 
     def save_to_supabase(self, comparison_results, supabase_conn):
-        """Save comparison results to Supabase"""
+        """Save comparison results to Supabase with enhanced data handling"""
         cursor = None
         try:
             if not supabase_conn:
@@ -450,14 +450,31 @@ class ExcelProcessor:
 
             cursor = supabase_conn.cursor()
 
-            # Karşılaştırma sonuçlarını JSON olarak kaydet
-            try:
-                # Convert comparison data to CSV format
-                comparison_data = comparison_results.get('comparison_data', [])
-                df = pd.DataFrame(comparison_data)
-                csv_buffer = io.StringIO()
-                df.to_csv(csv_buffer, index=False)
-                csv_data = csv_buffer.getvalue()
+            # Detaylı veri hazırlama
+            comparison_data = comparison_results.get('comparison_data', [])
+            
+            # Veriyi zenginleştir
+            enriched_data = []
+            for item in comparison_data:
+                enriched_item = {
+                    'type': item.get('type'),
+                    'row': item.get('row'),
+                    'column': item.get('column'),
+                    'old_value': item.get('value1'),
+                    'new_value': item.get('value2'),
+                    'change_type': item.get('change_type'),
+                    'modified_by': item.get('modified_by', 'System'),
+                    'modified_date': item.get('modified_date'),
+                    'importance': 'high' if item.get('type') == 'structure' else 'normal',
+                    'status': 'pending'
+                }
+                enriched_data.append(enriched_item)
+
+            # DataFrame oluştur ve CSV'ye dönüştür
+            df = pd.DataFrame(enriched_data)
+            csv_buffer = io.StringIO()
+            df.to_csv(csv_buffer, index=False, encoding='utf-8')
+            csv_data = csv_buffer.getvalue()
                 
                 cursor.execute("""
                     INSERT INTO comparison_results 
@@ -506,17 +523,27 @@ class ExcelProcessor:
             return False
 
     def generate_comparison_report(self, comparison_results):
-        """Generate an Excel report from comparison results with detailed user information"""
+        """Generate an enhanced Excel report with better formatting and details"""
         try:
-            # Create a new workbook
             wb = openpyxl.Workbook()
             ws = wb.active
-            ws.title = "Comparison Results"
+            ws.title = "Karşılaştırma Sonuçları"
 
-            # Add report header
-            ws.cell(row=1, column=1, value="WSCAD Excel Comparison Report")
+            # Gelişmiş başlık
+            ws.cell(row=1, column=1, value="WSCAD Excel Karşılaştırma Raporu")
             ws.merge_cells('A1:H1')
-            ws['A1'].font = Font(bold=True, size=14)
+            ws['A1'].font = Font(bold=True, size=16, color="0000FF")
+            ws['A1'].fill = PatternFill(start_color="E0E0E0", end_color="E0E0E0", fill_type="solid")
+            ws['A1'].alignment = openpyxl.styles.Alignment(horizontal='center', vertical='center')
+
+            # Alt başlık ve tarih
+            ws.cell(row=2, column=1, value=f"Oluşturulma Tarihi: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+            ws['A2'].font = Font(italic=True)
+            ws.merge_cells('A2:H2')
+            
+            # Tablo başlıkları için özel stil
+            header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+            header_font = Font(bold=True, color="FFFFFF", size=12)
             ws['A1'].alignment = openpyxl.styles.Alignment(horizontal='center')
 
             # Add timestamp and user info
@@ -569,10 +596,43 @@ class ExcelProcessor:
                 ws.cell(row=row_idx, column=7, value=diff.get('modified_by', 'System'))
                 ws.cell(row=row_idx, column=8, value=diff.get('modified_date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
 
-            # Format the table
-            for col in range(1, len(headers) + 1):
+            # Gelişmiş tablo formatı
+            thin_border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+            
+            thick_border = Border(
+                left=Side(style='medium'),
+                right=Side(style='medium'),
+                top=Side(style='medium'),
+                bottom=Side(style='medium')
+            )
+
+            # Sütun genişliklerini optimize et
+            column_widths = {
+                'Type': 15,
+                'Row/Element': 12,
+                'Column': 25,
+                'Original Value': 30,
+                'New Value': 30,
+                'Change Type': 15,
+                'Modified By': 20,
+                'Modified Date': 20
+            }
+
+            for col, (header, width) in enumerate(column_widths.items(), 1):
                 column_letter = openpyxl.utils.get_column_letter(col)
-                ws.column_dimensions[column_letter].width = 20
+                ws.column_dimensions[column_letter].width = width
+                
+                # Başlık hücrelerini formatla
+                header_cell = ws.cell(row=3, column=col, value=header)
+                header_cell.fill = header_fill
+                header_cell.font = header_font
+                header_cell.border = thick_border
+                header_cell.alignment = openpyxl.styles.Alignment(horizontal='center')
 
             # Create a summary sheet
             summary_ws = wb.create_sheet(title="Summary")
