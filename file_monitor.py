@@ -15,7 +15,7 @@ class ExcelFileHandler(FileSystemEventHandler):
     def is_excel_file(self, path):
         return path.lower().endswith(('.xlsx', '.xls'))
 
-    def on_created(self, self, event):
+    def on_created(self, event):
         if not event.is_directory and self.is_excel_file(event.src_path):
             print(f"Yeni Excel dosyası algılandı: {event.src_path}")
             # Dosyanın yazılmasını bekle
