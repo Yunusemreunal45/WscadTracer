@@ -762,7 +762,6 @@ if auth_status:
             if st.button("Export to ERP"):
                 with st.spinner("Exporting data to ERP..."):
                     try:
-```python
                         # Create connection parameters
                         connection_params = {
                             "host": erp_host,
