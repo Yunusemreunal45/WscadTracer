@@ -15,7 +15,7 @@ class ExcelFileHandler(FileSystemEventHandler):
     def is_excel_file(self, path):
         return path.lower().endswith(('.xlsx', '.xls'))
 
-    def on_created(self, event):
+    def on_created(self, self, event):
         if not event.is_directory and self.is_excel_file(event.src_path):
             print(f"Yeni Excel dosyası algılandı: {event.src_path}")
             # Dosyanın yazılmasını bekle
@@ -151,24 +151,27 @@ class FileMonitor:
         self.monitor_thread = threading.Thread(target=monitor_task, daemon=True)
         self.monitor_thread.start()
 
-        # Önce attached_assets klasöründeki dosyaları kontrol et
+        # Önce attached_assets klasöründeki dosyaları kontrol et ve kopyala
         assets_dir = "attached_assets"
         if os.path.exists(assets_dir):
             print(f"Attached assets klasöründen dosyalar yükleniyor...")
+            import shutil
+            os.makedirs(self.directory, exist_ok=True)
+
             for filename in os.listdir(assets_dir):
-                if filename.endswith(('.xlsx', '.xls')):
+                if filename.lower().endswith(('.xlsx', '.xls')):
                     src_path = os.path.join(assets_dir, filename)
                     dst_path = os.path.join(self.directory, filename)
                     try:
-                        import shutil
-                        shutil.copy2(src_path, dst_path)
-                        print(f"Dosya kopyalandı: {filename}")
+                        if not os.path.exists(dst_path):
+                            shutil.copy2(src_path, dst_path)
+                            print(f"Dosya kopyalandı: {filename}")
+
+                            # Trigger file created event
+                            mock_event = type('Event', (), {'is_directory': False, 'src_path': dst_path})
+                            event_handler.on_created(mock_event)
                     except Exception as e:
                         print(f"Dosya kopyalama hatası {filename}: {e}")
-                        # Hedef dizini oluştur
-                        os.makedirs(self.directory, exist_ok=True)
-                        # Tekrar kopyalamayı dene
-                        shutil.copy2(src_path, dst_path)
 
         # Supabase bağlantısını başlat
         try:
@@ -242,13 +245,13 @@ class FileMonitor:
             self.observer.stop()
             self.observer.join()
             print("Dizin izleme durduruldu")
-            
+
             # Clear processed files from handler
             if self.observer.event_handlers:
                 for handler in self.observer.event_handlers:
                     if isinstance(handler, ExcelFileHandler):
                         handler.processed_files.clear()
-            
+
             # Clear files from database
             if self.db:
                 self.db.execute("DELETE FROM files")
