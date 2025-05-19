@@ -237,7 +237,10 @@ if auth_status:
                         )
 
                         if comparison_id:
-                            st.success(f"Karşılaştırma tamamlandı! {len(comparison_result)} fark bulundu ve kaydedildi.")
+                            st.success(f"Karşılaştırma tamamlandı!")
+                            st.info(f"Toplam {len(comparison_result)} fark bulundu:")
+                            st.write(f"- Dosya 1: {os.path.basename(file1_data['filepath'])}")
+                            st.write(f"- Dosya 2: {os.path.basename(file2_data['filepath'])}")
                     else:
                         st.warning("En az iki dosya gerekli")
                 except Exception as e:
@@ -573,7 +576,10 @@ if auth_status:
                             )
 
                             if comparison_id:
-                                st.success(f"Karşılaştırma tamamlandı! {len(comparison_result)} fark bulundu ve kaydedildi.")
+                                st.success(f"Karşılaştırma tamamlandı!")
+                                st.info(f"Toplam {len(comparison_result)} fark bulundu:")
+                                st.write(f"- Dosya 1: {os.path.basename(file1_data['filepath'])}")
+                                st.write(f"- Dosya 2: {os.path.basename(file2_data['filepath'])}")
                         else:
                             st.warning("En az iki dosya gerekli")
                     except Exception as e:
@@ -751,7 +757,7 @@ if auth_status:
             with st.expander("ERP Connection Settings"):
                 erp_host = st.text_input("ERP Host", value="localhost")
                 erp_port = st.number_input("ERP Port", value=5432)
-                erp_db = st.text_input("ERP Database", value="erp_database")
+                erp_db =st.text_input("ERP Database", value="erp_database")
                 erp_user = st.text_input("ERP Username", value="erp_user")
                 erp_password = st.text_input("ERP Password", type="password")
 
