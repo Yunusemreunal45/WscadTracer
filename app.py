@@ -226,13 +226,14 @@ if auth_status:
 
                         st.session_state.auto_comparison_result = auto_result
 
-                        # Save to database
+                        # Save to database with full data
                         comparison_id = db.save_comparison_result(
                             file2_data['id'],
                             file1_data['id'],
                             file2_data['id'],
                             len(comparison_result),
-                            datetime.now()
+                            datetime.now(),
+                            comparison_result
                         )
 
                         if comparison_id:
@@ -567,7 +568,8 @@ if auth_status:
                                 file1_data['id'],
                                 file2_data['id'],
                                 len(comparison_result),
-                                datetime.now()
+                                datetime.now(),
+                                comparison_result
                             )
 
                             if comparison_id:
@@ -760,9 +762,9 @@ if auth_status:
             if st.button("Export to ERP"):
                 with st.spinner("Exporting data to ERP..."):
                     try:
+```python
                         # Create connection parameters
                         connection_params = {
-```python
                             "host": erp_host,
                             "port": erp_port,
                             "database": erp_db,

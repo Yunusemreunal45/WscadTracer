@@ -55,6 +55,7 @@ class Database:
                     revision2_id INTEGER NOT NULL,
                     changes_count INTEGER,
                     comparison_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    comparison_data TEXT,
                     FOREIGN KEY (file_id) REFERENCES files(id),
                     FOREIGN KEY (revision1_id) REFERENCES file_revisions(id),
                     FOREIGN KEY (revision2_id) REFERENCES file_revisions(id)
@@ -182,7 +183,7 @@ class Database:
         result = self.query_one("SELECT * FROM file_revisions WHERE id = ?", (revision_id,))
         return dict(result) if result else None
 
-    def save_comparison_result(self, file_id, rev1_id, rev2_id, changes_count, comparison_date):
+    def save_comparison_result(self, file_id, rev1_id, rev2_id, changes_count, comparison_date, comparison_data=None):
         try:
             with sqlite3.connect(self.db_file, check_same_thread=False) as conn:
                 conn.row_factory = sqlite3.Row
@@ -191,6 +192,25 @@ class Database:
                 # Validate inputs
                 if not all([file_id, rev1_id, rev2_id, changes_count, comparison_date]):
                     raise ValueError("Tüm alanlar zorunludur")
+
+                # Save comparison details with JSON data
+                cursor.execute("""
+                    INSERT INTO comparisons (
+                        file_id, 
+                        revision1_id, 
+                        revision2_id, 
+                        changes_count, 
+                        comparison_date,
+                        comparison_data
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    file_id, 
+                    rev1_id, 
+                    rev2_id, 
+                    changes_count, 
+                    comparison_date,
+                    json.dumps(comparison_data) if comparison_data else None
+                ))
                 
                 # Check if file exists
                 cursor.execute("SELECT id FROM files WHERE id = ?", (file_id,))
