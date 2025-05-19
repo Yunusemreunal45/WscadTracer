@@ -19,16 +19,17 @@ class ExcelFileHandler(FileSystemEventHandler):
         if not event.is_directory and self.is_excel_file(event.src_path):
             print(f"Yeni Excel dosyası algılandı: {event.src_path}")
             # Dosyanın yazılmasını bekle
-            max_attempts = 5
+            max_attempts = 10
             for attempt in range(max_attempts):
                 try:
                     if os.path.exists(event.src_path) and os.access(event.src_path, os.R_OK):
-                        with open(event.src_path, 'rb') as f:
-                            f.read(1)
-                        break
+                        with pd.ExcelFile(event.src_path) as xls:
+                            # Excel dosyasını doğrula
+                            if len(xls.sheet_names) > 0:
+                                break
                 except:
                     if attempt < max_attempts - 1:
-                        time.sleep(0.2)
+                        time.sleep(0.5)
                     continue
 
             # Otomatik karşılaştırma yap
@@ -82,16 +83,34 @@ class ExcelFileHandler(FileSystemEventHandler):
                 except Exception as e:
                     print(f"WSCAD format kontrolünde hata: {e}")
 
-                filename = os.path.basename(event.src_path)
-                filesize = os.path.getsize(event.src_path) / 1024
-
-                file_id = self.db.add_file(filename, event.src_path, filesize)
-
-                if file_id:
-                    print(f"Yeni Excel dosyası eklendi: {filename}")
-                    self.processed_files.add(event.src_path)
-                else:
-                    print(f"Dosya eklenirken hata oluştu: {filename}")
+                try:
+                    filename = os.path.basename(event.src_path)
+                    filesize = os.path.getsize(event.src_path) / 1024
+                    
+                    # Dosya zaten var mı kontrol et
+                    existing_file = self.db.execute("SELECT id FROM files WHERE filename = ?", (filename,)).fetchone()
+                    
+                    if existing_file:
+                        # Dosyayı güncelle
+                        self.db.execute(
+                            "UPDATE files SET filepath = ?, filesize = ?, detected_time = ? WHERE filename = ?",
+                            (event.src_path, filesize, datetime.now(), filename)
+                        )
+                        file_id = existing_file[0]
+                        print(f"Excel dosyası güncellendi: {filename}")
+                    else:
+                        # Yeni dosya ekle
+                        file_id = self.db.add_file(filename, event.src_path, filesize)
+                        print(f"Yeni Excel dosyası eklendi: {filename}")
+                    
+                    if file_id:
+                        self.processed_files.add(event.src_path)
+                        # Veritabanını zorla kaydet
+                        self.db.commit()
+                    else:
+                        print(f"Dosya işlenirken hata oluştu: {filename}")
+                except Exception as e:
+                    print(f"Dosya işleme hatası: {e}")
 
     def on_modified(self, event):
         if not event.is_directory and self.is_excel_file(event.src_path):
