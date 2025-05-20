@@ -40,19 +40,19 @@ def authenticate():
     # If already authenticated, return authentication status
     if st.session_state.authenticated:
         return True, st.session_state.username
-    
+
     # Create a form for authentication
-    st.title("WSCAD Excel Comparison System")
+    st.title("WSCAD Bom Karşılaştırma Sistemi")
     
     # Create tabs for login and registration
-    login_tab, register_tab = st.tabs(["Login", "Register"])
-    
+    login_tab, register_tab = st.tabs(["Giriş"," Kayıt Ol"])
+
     with login_tab:
         with st.form("login_form"):
-            st.subheader("Login")
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            login_submit = st.form_submit_button("Login")
+            st.subheader("Giriş yap")
+            username = st.text_input("Kullanıcı Adı")
+            password = st.text_input("Şifre", type="password")
+            login_submit = st.form_submit_button("Giriş Yap")
             
             if login_submit:
                 if username and password:
@@ -60,39 +60,39 @@ def authenticate():
                         st.session_state.authenticated = True
                         st.session_state.username = username
                         db.log_activity(f"User logged in: {username}", username)
-                        st.success("Login successful!")
+                        st.success("Giriş başarılı!")
                         st.rerun()
                     else:
-                        st.error("Invalid username or password")
+                        st.error("Geçersiz kullanıcı adı veya şifre")
                 else:
-                    st.warning("Please enter both username and password")
-    
+                    st.warning("Lütfen hem kullanıcı adınızı hem de şifrenizi girin")
+
     with register_tab:
         with st.form("register_form"):
-            st.subheader("Register")
-            new_username = st.text_input("Username")
-            new_password = st.text_input("Password", type="password")
-            confirm_password = st.text_input("Confirm Password", type="password")
-            register_submit = st.form_submit_button("Register")
+            st.subheader("Kayıt ol")
+            new_username = st.text_input("Kullanıcı Adı")
+            new_password = st.text_input("Şifre", type="password")
+            confirm_password = st.text_input("Şifreyi onayla ", type="password")
+            register_submit = st.form_submit_button("Kayıt Ol")
             
             if register_submit:
                 if new_username and new_password and confirm_password:
                     if new_password != confirm_password:
-                        st.error("Passwords do not match")
+                        st.error("Şifreler eşleşmiyor")
                     else:
                         if create_user(new_username, new_password, db):
                             st.success("Registration successful! You can now log in.")
                             db.log_activity(f"New user registered: {new_username}", new_username)
                         else:
-                            st.error("Username already exists")
+                            st.error("Kullanıcı adı zaten mevcut")
                 else:
-                    st.warning("Please fill in all fields")
+                    st.warning("Lütfen tüm alanları doldurun")
     
     # Add a demo account option
-    with st.expander("Demo Account"):
-        st.write("Use the following credentials for demo access:")
-        st.code("Username: demo\nPassword: demo123")
-        if st.button("Login as Demo User"):
+    with st.expander("Demo Hesabı"):
+        st.write("Demo erişimi için aşağıdaki kimlik bilgilerini kullanın:")
+        st.code("Kullanıcı Adı: demo\n Şifre: demo123")
+        if st.button("Demo Kullanıcısı olarak giriş yapın"):
             # Check if demo user exists, create if not
             if not verify_user("demo", "demo123", db):
                 create_user("demo", "demo123", db)
@@ -101,7 +101,7 @@ def authenticate():
             st.session_state.authenticated = True
             st.session_state.username = "demo"
             db.log_activity("Demo user logged in", "demo")
-            st.success("Logged in as demo user!")
+            st.success("Demo kullanıcısı olarak giriş yapıldı!")
             st.rerun()
     
     return False, None

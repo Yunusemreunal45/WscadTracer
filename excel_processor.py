@@ -530,7 +530,7 @@ class ExcelProcessor:
             ws.title = "Karşılaştırma Sonuçları"
 
             # Gelişmiş başlık
-            ws.cell(row=1, column=1, value="WSCAD Excel Karşılaştırma Raporu")
+            ws.cell(row=1, column=1, value="WSCAD Bom Karşılaştırma Raporu")
             ws.merge_cells('A1:H1')
             ws['A1'].font = Font(bold=True, size=16, color="0000FF")
             ws['A1'].fill = PatternFill(start_color="E0E0E0", end_color="E0E0E0", fill_type="solid")
@@ -550,7 +550,7 @@ class ExcelProcessor:
             ws.cell(row=2, column=1, value=f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
             # Add headers
-            headers = ["Type", "Row/Element", "Column", "Original Value", "New Value", "Change Type", "Modified By", "Modified Date"]
+            headers = ["Tür", "Malzeme", "Column", "Orjinal Deper", "Yeni Değer", "Değişiklik türü", "Değiştiren", "Değiştirilme Tarihi"]
             row_offset = 4  # Start data from row 4
             for col_idx, header in enumerate(headers, 1):
                 cell = ws.cell(row=3, column=col_idx, value=header)

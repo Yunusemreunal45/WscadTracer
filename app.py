@@ -16,7 +16,7 @@ from utils import get_file_info, log_activity
 
 # Page configuration
 st.set_page_config(
-    page_title="WSCAD Excel Comparison System",
+    page_title="WSCAD Bom Comparison System",
     page_icon="📊",
     layout="wide"
 )
@@ -34,7 +34,7 @@ db, setup_success = get_database()
 if not setup_success:
     st.error("Veritabanı oluşturulamadı. Lütfen uygulama izinlerini kontrol edin.")
 else:
-    st.success("WSCAD Excel karşılaştırma sistemi hazır.")
+    st.success("WSCAD Bom karşılaştırma sistemi hazır.")
 
 # Initialize Excel processor
 excel_processor = ExcelProcessor()
@@ -63,7 +63,7 @@ def start_monitoring(directory):
             return True
         return False
     except Exception as e:
-        st.error(f"Monitoring start error: {e}")
+        st.error(f"İzleme başlatma hatası: {e}")
         return False
 
 def stop_monitoring():
@@ -75,18 +75,18 @@ def stop_monitoring():
         log_activity("Stopped directory monitoring", db, username)
 
 def auto_compare_latest_files(directory='.'):
-    """Find and compare the two most recent Excel files"""
+    """Find and compare the two most recent Bom files"""
     try:
         # Use the Excel processor to find and compare latest files
         comparison_result = excel_processor.auto_compare_latest_files(directory)
 
         # Log the activity
-        log_activity(f"Auto-compared latest files: {os.path.basename(comparison_result['file1']['filepath'])} and {os.path.basename(comparison_result['file2']['filepath'])}", db, username)
+        log_activity(f"Otomatik olarak karşılaştırılan son dosyalar: {os.path.basename(comparison_result['file1']['filepath'])} and {os.path.basename(comparison_result['file2']['filepath'])}", db, username)
 
         return comparison_result
     except Exception as e:
-        st.error(f"Auto-comparison error: {str(e)}")
-        log_activity(f"Auto-comparison failed: {str(e)}", db, username)
+        st.error(f"Otomatik karşılaştırma hatası: {str(e)}")
+        log_activity(f"Otomatik karşılaştırma hatası: {str(e)}", db, username)
         return None
 
 # Main application logic
@@ -109,14 +109,14 @@ if auth_status:
         st.session_state.auto_comparison_result = None
 
     # Main application
-    st.title("WSCAD Excel Comparison and Process Tracking System")
+    st.title("Wscad Bom Yönetimi ")
 
     # Help/Guide section
     with st.sidebar:
         with st.expander("📚 Nasıl Kullanılır?"):
             st.markdown("""
             ### Hızlı Başlangıç Rehberi
-            1. **Dosya Seçimi**: 'Files' sekmesinden Excel dosyalarınızı seçin
+            1. **Dosya Seçimi**: 'Files' sekmesinden Bom dosyalarınızı seçin
             2. **Karşılaştırma**: İki dosyayı seçip karşılaştırın
             3. **Sonuçlar**: Değişiklikleri detaylı raporlarda görüntüleyin
 
@@ -135,7 +135,7 @@ if auth_status:
 
     # Sidebar
     with st.sidebar:
-        st.header(f"Welcome, {username}")
+        st.header(f"Hoşlgeldiniz, {username}")
 
         # Directory monitoring section
         st.subheader("Dizin İzleme")
@@ -155,7 +155,7 @@ if auth_status:
         )
 
         if selected_dir_option == "Custom":
-            directory = st.text_input("Özel dizin yolu girin", help="Excel dosyalarının bulunduğu dizini girin")
+            directory = st.text_input("Özel dizin yolu girin", help="Bom dosyalarının bulunduğu dizini girin")
         else:
             directory = default_dirs[selected_dir_option]
             st.text(f"Seçilen dizin: {directory}")
@@ -167,7 +167,7 @@ if auth_status:
             st.success(f"✅ Geçerli dizin: {directory}")
             excel_files = excel_processor.list_excel_files(directory)
             if excel_files:
-                st.info(f"📊 Bu dizinde {len(excel_files)} Excel dosyası bulundu")
+                st.info(f"📊 Bu dizinde {len(excel_files)} Bom dosyası bulundu")
                 for file in excel_files[:5]:  # Son 5 dosyayı göster
                     st.text(f"📑 {file['filename']} - {file['modified']}")
 
@@ -203,9 +203,9 @@ if auth_status:
             st.warning("Dizin izleme aktif değil")
 
         # Auto-comparison button (New Feature)
-        st.subheader("Quick Auto-Compare")
-        if st.button("Compare Latest Excel Files"):
-            with st.spinner("Finding and comparing the latest Excel files..."):
+        st.subheader("Hızlı Otomatik karşılaştırma")
+        if st.button("Son Karşılaştırılan Bom Dosyaları"):
+            with st.spinner("En son Bom dosyalarını bulup karşılaştırıyoruz..."):
                 try:
                     latest_files = db.get_recent_files(2)
                     if len(latest_files) >= 2:
@@ -247,17 +247,17 @@ if auth_status:
                     st.error(f"Otomatik karşılaştırma hatası: {str(e)}")
 
         # Logout button
-        if st.button("Logout"):
-            log_activity("User logged out", db, username)
+        if st.button("Çıkış"):
+            log_activity("Kullanıcı Çıkış yaptı", db, username)
             st.session_state.clear()
             st.rerun()
 
     # Main content tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Files", "Comparison", "Auto-Compare", "History", "Export to ERP"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Dosyalar", "Karşılaştırma", "Otomatik Karşılaştırma", "Tarih", "ERP'ye aktar"])
 
     # Files tab
     with tab1:
-        st.header("Excel Files")
+        st.header("Bom Dosyaları")
 
         # Add auto-refresh
         if 'refresh_counter' not in st.session_state:
@@ -272,15 +272,15 @@ if auth_status:
 
         if not files:
             if st.session_state.monitoring:
-                st.info("No files have been detected yet. Start monitoring a directory to detect WSCAD Excel files.")
+                st.info("Henüz hiçbir dosya algılanmadı. WSCAD Bom dosyalarını algılamak için bir dizini izlemeye başlayın.")
             else:
-                st.info("Monitoring is stopped. Start monitoring to detect Excel files.")
+                st.info("İzleme durduruldu. Bom dosyalarını algılamak için izlemeyi başlatın.")
         else:
             # Create DataFrame from files
             files_df = pd.DataFrame(files, columns=["ID", "Filename", "Path", "Size (KB)", "Detected Time", "Processed", "Current Revision"])
 
             # Display files in a more organized way with actions
-            st.subheader("📁 Detected Excel Files")
+            st.subheader("📁 Tespit Edilen Bom Dosyalar")
 
             for _, row in files_df.iterrows():
                 with st.expander(f"📄 {row['Filename']} - Rev.{row['Current Revision']}"):
@@ -291,7 +291,7 @@ if auth_status:
                         st.text(f"Detected: {row['Detected Time']}")
 
                     with col2:
-                        if st.button("🗑️ Delete", key=f"del_{row['ID']}"):
+                        if st.button("🗑️ Sil", key=f"del_{row['ID']}"):
                             # Delete file from database and disk
                             db.execute("DELETE FROM files WHERE id = ?", (row['ID'],))
                             if os.path.exists(row['Path']):
@@ -299,7 +299,7 @@ if auth_status:
                             st.rerun()
 
                     with col3:
-                        if st.button("💾 Archive", key=f"arch_{row['ID']}"):
+                        if st.button("💾 Arşiv", key=f"arch_{row['ID']}"):
                             # Move file to archive folder
                             archive_dir = "archived_files"
                             os.makedirs(archive_dir, exist_ok=True)
@@ -313,20 +313,20 @@ if auth_status:
             # Allow user to select a file
             file_ids = [f[0] for f in files]
             file_names = [f[1] for f in files]
-            selected_file_index = st.selectbox("Select a file for processing", 
+            selected_file_index = st.selectbox("İşleme için bir dosya seçin", 
                                               options=range(len(file_ids)),
                                               format_func=lambda i: file_names[i])
 
             # Allow selecting two files for comparison
-            selected_file_index2 = st.selectbox("Select second file for comparison", 
+            selected_file_index2 = st.selectbox("İşleme için bir dosya seçin", 
                                              options=range(len(file_ids)),
                                              format_func=lambda i: file_names[i])
 
             col1, col2 = st.columns(2)
             with col1:
-                compare_button = st.button("Compare Selected Files")
+                compare_button = st.button("Seçili Dosyaları Karşılaştır")
             with col2:
-                save_as_revision = st.checkbox("Save as Revision", value=True)
+                save_as_revision = st.checkbox("Revizyon olarak kaydet", value=True)
 
             if compare_button:
                 with st.spinner("📊 Dosyalar karşılaştırılıyor..."):
@@ -362,14 +362,14 @@ if auth_status:
                                 # Add download button for comparison report
                                 report_data = excel_processor.generate_comparison_report(comparison_result)
                                 st.download_button(
-                                    label="Download Comparison Report",
+                                    label="Karşılaştırma Raporunu İndirin",
                                     data=report_data.getvalue(),
                                     file_name=f"comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                                 )
 
                             with col2:
-                                if st.button("Save to Supabase"):
+                                if st.button("Veri Tabanına Kaydet"):
                                     try:
                                         from migrate_to_supabase import get_supabase_connection
                                         supabase_conn = get_supabase_connection()
@@ -404,7 +404,7 @@ if auth_status:
 
     # Comparison tab
     with tab2:
-        st.header("Excel Comparison")
+        st.header("Bom Karşılaştırması")
 
         if st.session_state.selected_file:
             selected_file = st.session_state.selected_file
@@ -414,14 +414,14 @@ if auth_status:
             revisions = db.get_file_revisions(selected_file['id'])
 
             if len(revisions) < 2:
-                st.info("Need at least two revisions to compare. Upload a new version of this file to enable comparison.")
+                st.info("Karşılaştırmak için en az iki revizyona ihtiyacınız var. Karşılaştırmayı etkinleştirmek için bu dosyanın yeni bir sürümünü yükleyin.")
             else:
                 # Allow user to select revisions to compare
                 rev_col1, rev_col2 = st.columns(2)
 
                 with rev_col1:
                     rev1_options = [(r[0], f"Revision {r[2]} - {r[3]}") for r in revisions]
-                    rev1_index = st.selectbox("Select first revision", 
+                    rev1_index = st.selectbox("İlk revizyonu seçin", 
                                              options=range(len(rev1_options)),
                                              format_func=lambda i: rev1_options[i][1])
                     rev1_id = rev1_options[rev1_index][0]
@@ -429,17 +429,17 @@ if auth_status:
                 with rev_col2:
                     # Filter out the already selected revision
                     rev2_options = [r for r in rev1_options if r[0] != rev1_id]
-                    rev2_index = st.selectbox("Select second revision", 
+                    rev2_index = st.selectbox("İkinci revizyonu seçin", 
                                              options=range(len(rev2_options)),
                                              format_func=lambda i: rev2_options[i][1])
                     rev2_id = rev2_options[rev2_index][0]
 
-                if st.button("Compare Revisions"):
+                if st.button("Revizyonları Karşılaştır"):
                     rev1_data = db.get_revision_by_id(rev1_id)
                     rev2_data = db.get_revision_by_id(rev2_id)
 
                     if rev1_data and rev2_data:
-                        with st.spinner("Comparing revisions..."):
+                        with st.spinner("Revizyonlar karşılaştırılıyor..."):
                             try:
                                 # Get file paths
                                 file1_path = rev1_data[4]
@@ -450,7 +450,7 @@ if auth_status:
                                 st.session_state.comparison_result = comparison_result
 
                                 # Log the comparison activity
-                                log_activity(f"Compared revisions: {rev1_data[2]} and {rev2_data[2]}", db, username)
+                                log_activity(f"Karşılaştırılan revizyonlar: {rev1_data[2]} and {rev2_data[2]}", db, username)
 
                                 # Save comparison result to database
                                 db.save_comparison_result(
@@ -461,16 +461,16 @@ if auth_status:
                                     comparison_date=datetime.now()
                                 )
 
-                                st.success(f"Found {len(comparison_result)} differences between revisions")
+                                st.success(f"Revizyonlar {len(comparison_result)} arasında farklar bulundu")
                             except Exception as e:
-                                st.error(f"Error comparing files: {str(e)}")
+                                st.error(f"Dosyaları karşılaştırırken hata oluştu: {str(e)}")
 
                 # Display comparison results if available
                 if st.session_state.comparison_result:
-                    st.subheader("Comparison Results")
+                    st.subheader("Karşılaştırma Sonuçları")
 
                     if not st.session_state.comparison_result:
-                        st.info("No differences found between the selected revisions")
+                        st.info("Seçilen revizyonlar arasında hiçbir fark bulunamadı")
                     else:
                         # Create DataFrame from comparison results
                         diff_df = pd.DataFrame(st.session_state.comparison_result)
@@ -526,25 +526,25 @@ if auth_status:
 
                         # Download comparison report as Excel
                         if st.download_button(
-                            label="Download Comparison Report",
+                            label="Karşılaştırma Raporunu İndirin",
                             data=excel_processor.generate_comparison_report(st.session_state.comparison_result).getvalue(),
                             file_name=f"comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         ):
                             log_activity("Downloaded comparison report", db, username)
-                            st.success("Downloaded comparison report successfully")
+                            st.success("Karşılaştırma raporu başarıyla indirildi")
         else:
-            st.info("Please select a file from the Files tab to enable comparison")
+            st.info("Karşılaştırmayı etkinleştirmek için lütfen Dosyalar sekmesinden bir dosya seçin")
 
     # Auto-Compare tab (New Feature)
     with tab3:
-        st.header("Auto Excel Comparison")
-        st.write("Son eklenen iki Excel dosyasını otomatik olarak karşılaştırır.")
+        st.header("Otomatik Bom Karşılaştırması")
+        st.write("Son iki kişinin miktarı otomatik olarak karşılaştırılır.")
 
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Dosyaları Karşılaştır"):
-                with st.spinner("Excel dosyaları karşılaştırılıyor..."):
+                with st.spinner("Bom dosyaları karşılaştırılıyor..."):
                     try:
                         latest_files = db.get_recent_files(2)
                         if len(latest_files) >= 2:
@@ -605,7 +605,7 @@ if auth_status:
 
         # Display auto-comparison results if available
         if st.session_state.auto_comparison_result:
-            st.subheader("Auto-Comparison Results")
+            st.subheader("Otomatik Karşılaştırma Sonuçları")
 
             # Display file info
             st.write(f"First file: **{os.path.basename(st.session_state.auto_comparison_result['file1']['filepath'])}**")
@@ -624,7 +624,7 @@ if auth_status:
             if report_file and os.path.exists(report_file):
                 with open(report_file, 'rb') as f:
                     if st.download_button(
-                        label="Download Auto-Comparison Report",
+                        label="Otomatik Karşılaştırma Raporunu İndirin",
                         data=f.read(),
                         file_name=f"auto_comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -636,26 +636,26 @@ if auth_status:
                 if 'comparison_data' in st.session_state.auto_comparison_result:
                     comparison_data = st.session_state.auto_comparison_result['comparison_data']
                     if st.download_button(
-                        label="Download Auto-Comparison Report",
+                        label="Otomatik Karşılaştırma Raporunu İndirin",
                         data=excel_processor.generate_comparison_report(comparison_data).getvalue(),
                         file_name=f"auto_comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     ):
                         log_activity("Downloaded auto-comparison report", db, username)
-                        st.success("Downloaded auto-comparison report successfully")
+                        st.success("Otomatik karşılaştırma raporu başarıyla indirildi")
 
     # History tab
     with tab4:
-        st.header("History & Revisions")
+        st.header("Tarihçe ve Revizyonlar")
 
-        tab4_1, tab4_2 = st.tabs(["Activity History", "Revision History"])
+        tab4_1, tab4_2 = st.tabs(["Etkinlik Geçmişi", "Revizyon Geçmişi"])
 
         with tab4_1:
             # Fetch activity logs from database
             activity_logs = db.get_activity_logs()
 
             if not activity_logs:
-                st.info("No activity recorded yet")
+                st.info("Henüz etkinlik kaydedilmedi")
             else:
                 # Create DataFrame for logs
                 logs_df = pd.DataFrame(activity_logs, columns=["ID", "User", "Activity", "Timestamp"])
@@ -711,10 +711,10 @@ if auth_status:
                 except Exception as e:
                     st.error(f"Karşılaştırma hatası: {str(e)}")
             else:
-                st.warning("Karşılaştırma için en az iki Excel dosyası gerekli")
+                st.warning("Karşılaştırma için en az iki Bom dosyası gerekli")
 
                 if comparisons:
-                    st.subheader("Excel Karşılaştırma Revizyonları")
+                    st.subheader("Bom Karşılaştırma Revizyonları")
                     comp_data = []
                     for comp in comparisons:
                         rev1 = db.get_revision_by_id(comp[3])
@@ -752,10 +752,10 @@ if auth_status:
                         else:
                             st.info("Bu dosya için henüz karşılaştırma revizyonu bulunmuyor")
                 else:
-                    st.info("No files found in the system")
+                    st.info("Sistemde dosya bulunamadı")
 
         if not activity_logs:
-            st.info("No activity recorded yet")
+            st.info("Henüz etkinlik kaydedilmedi")
         else:
             # Create DataFrame for logs
             logs_df = pd.DataFrame(activity_logs, columns=["ID", "User", "Activity", "Timestamp"])
@@ -783,20 +783,20 @@ if auth_status:
 
     # Export to ERP tab
     with tab5:
-        st.header("Export to ERP")
+        st.header("ERP'ye aktar")
 
         # First check for auto-comparison results
         if st.session_state.auto_comparison_result:
-            st.subheader("Export Auto-Comparison Results to ERP")
+            st.subheader("Otomatik Karşılaştırma Sonuçlarını ERP'ye Aktar")
             # Add auto-comparison export UI and functionality here
         elif st.session_state.comparison_result:
-            st.subheader("Export Comparison Results to ERP")
+            st.subheader("Karşılaştırma Sonuçlarını ERP'ye Aktar")
         else:
-            st.info("Please run a comparison first to enable ERP export")
+            st.info("Lütfen ERP ihracatını etkinleştirmek için önce bir karşılaştırma çalıştırın")
 
         if st.session_state.auto_comparison_result or st.session_state.comparison_result:
             # Connection settings
-            with st.expander("ERP Connection Settings"):
+            with st.expander("ERP Bağlantı Ayarları"):
                 erp_host = st.text_input("ERP Host", value="localhost")
                 erp_port = st.number_input("ERP Port", value=5432)
                 erp_db =st.text_input("ERP Database", value="erp_database")
@@ -807,7 +807,7 @@ if auth_status:
             export_format = st.selectbox("Export Format", ["JSON", "CSV", "Direct DB Connection"])
             include_metadata = st.checkbox("Include File Metadata", value=True)
 
-            if st.button("Export to ERP"):
+            if st.button("ERP'ye aktar"):
                 with st.spinner("Exporting data to ERP..."):
                     try:
                         # Create connection parameters
@@ -844,30 +844,30 @@ if auth_status:
                         # Log the export activity
                         log_activity(f"Exported comparison data to ERP in {export_format} format", db, username)
 
-                        st.success(f"Data exported successfully: {export_result}")
+                        st.success(f"Veriler başarıyla dışa aktarıldı: {export_result}")
                     except Exception as e:
-                        st.error(f"Error exporting to ERP: {str(e)}")
-                        log_activity(f"ERP export failed: {str(e)}", db, username)
+                        st.error(f"ERP'ye aktarmada hata: {str(e)}")
+                        log_activity(f"ERP dışa aktarımı başarısız oldu: {str(e)}", db, username)
 
         # Manual data export
-        st.subheader("Manual Data Export")
+        st.subheader("Manuel Veri Dışa Aktarımı")
 
         # Get all files
         files = db.get_all_files()
 
         if not files:
-            st.info("No files available for export")
+            st.info("Dışa aktarma için dosya yok")
         else:
             # Select file to export
             file_ids = [f[0] for f in files]
             file_names = [f[1] for f in files]
-            selected_export_file = st.selectbox("Select file to export", 
+            selected_export_file = st.selectbox("Dışa aktarılacak dosyayı seçin", 
                                            options=range(len(file_ids)),
                                            format_func=lambda i: file_names[i])
 
             export_selected_file_id = file_ids[selected_export_file]
 
-            if st.button("Prepare File for ERP Export"):
+            if st.button("ERP İhracatı için Dosyayı Hazırla"):
                 file_data = db.get_file_by_id(export_selected_file_id)
 
                 if file_data:
@@ -876,19 +876,19 @@ if auth_status:
                         export_data = excel_processor.prepare_for_export(file_data['filepath'])
 
                         # Show export data preview
-                        st.subheader("Export Data Preview")
+                        st.subheader("Veri Önizlemesini Dışa Aktar")
                         st.json(export_data)
 
                         # Save as JSON for download
                         if st.download_button(
-                            label="Download Export Data",
+                            label="Dışa Aktarma Verilerini İndir",
                             data=erp_exporter.generate_export_file(export_data, "json"),
                             file_name=f"erp_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
                             mime="application/json"
                         ):
                             log_activity(f"Downloaded ERP export data for file: {file_data['filename']}", db, username)
-                            st.success("Downloaded export data successfully")
+                            st.success("İhracat verileri başarıyla indirildi")
                     except Exception as e:
                         st.error(f"Error preparing file for export: {str(e)}")
 else:
-    st.warning("Please log in to access the system")
+    st.warning("Sisteme erişmek için lütfen giriş yapın")

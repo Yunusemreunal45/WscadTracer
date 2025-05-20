@@ -1,4 +1,4 @@
 [server]
-headless = true
-address = "0.0.0.0"
+headless = false
+address = "localhost"
 port = 5000
