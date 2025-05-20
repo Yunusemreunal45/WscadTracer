@@ -663,7 +663,7 @@ if auth_status:
                 st.dataframe(logs_df, use_container_width=True)
 
         with tab4_2:
-            st.subheader("Son Excel Karşılaştırma Raporu")
+            st.subheader("Son BOM Karşılaştırma Raporu")
             
             # Get the latest comparison results
             latest_files = db.get_recent_files(2)

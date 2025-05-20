@@ -143,6 +143,7 @@ def migrate_table(sqlite_conn, pg_conn, table_name, columns, column_types=None):
             pg_cursor.execute(sql, values)
 
         print(f"Migrated {len(rows)} rows from table {table_name}")
+        pg_conn.commit()
         return True
     except Exception as e:
         print(f"Error migrating table {table_name}: {e}")
