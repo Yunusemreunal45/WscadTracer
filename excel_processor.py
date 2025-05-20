@@ -550,11 +550,18 @@ class ExcelProcessor:
             ws.cell(row=2, column=1, value=f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
             # Add headers
-            headers = ["Tür", "Malzeme", "Column", "Orjinal Deper", "Yeni Değer", "Değişiklik türü", "Değiştiren", "Değiştirilme Tarihi"]
+            headers = ["Tür", "Malzeme", "Sütun", "Orjinal Değer", "Yeni Değer", "Değişiklik", "Değiştiren", "Değiştirilme Tarihi"]
             row_offset = 4  # Start data from row 4
             for col_idx, header in enumerate(headers, 1):
                 cell = ws.cell(row=3, column=col_idx, value=header)
                 cell.font = Font(bold=True)
+
+            # Define new color fills for changed cells
+            added_fill = PatternFill(start_color='87CEFA', end_color='87CEFA', fill_type='solid')  # Açık mavi - yeni eklenenler
+            increased_fill = PatternFill(start_color='90EE90', end_color='90EE90', fill_type='solid')  # Yeşil - artanlar
+            decreased_fill = PatternFill(start_color='FFA500', end_color='FFA500', fill_type='solid')  # Turuncu - azalanlar 
+            removed_fill = PatternFill(start_color='FF6347', end_color='FF6347', fill_type='solid')  # Kırmızı - silinenler
+            zero_fill = PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid')  # Kırmızı - sıfır olanlar
 
             # Add data with improved formatting
             for row_idx, diff in enumerate(comparison_results, row_offset):
@@ -562,15 +569,15 @@ class ExcelProcessor:
                 type_cell = ws.cell(row=row_idx, column=1)
                 type_value = diff.get('type', '')
                 if type_value == 'structure':
-                    type_cell.value = "Structure Change"
+                    type_cell.value = "Yapı Değişikliği"
                 elif type_value == 'cell':
-                    type_cell.value = "Cell Change"
+                    type_cell.value = "Değişiklik"
                 type_cell.font = Font(bold=True)
 
                 # Row/Element column
                 location_cell = ws.cell(row=row_idx, column=2)
                 if 'row' in diff:
-                    location_cell.value = f"Row {diff['row']}"
+                    location_cell.value = f"Satır {diff['row']}"
                 else:
                     location_cell.value = diff.get('element', '')
 
@@ -579,20 +586,49 @@ class ExcelProcessor:
 
                 # Original value cell
                 orig_cell = ws.cell(row=row_idx, column=4, value=diff.get('value1', ''))
-                if diff.get('change_type') == 'removed':
-                    orig_cell.fill = self.removed_fill
-
+                
                 # New value cell
                 new_cell = ws.cell(row=row_idx, column=5, value=diff.get('value2', ''))
-                if diff.get('change_type') == 'added':
-                    new_cell.fill = self.added_fill
+                
+                # Apply color based on change type and values
+                change_type = diff.get('change_type', '')
+                
+                # For newly added items (original value empty, new value present)
+                if change_type == 'added' or (not diff.get('value1') and diff.get('value2')):
+                    new_cell.fill = added_fill
+                    ws.cell(row=row_idx, column=6, value="Eklendi")
+                
+                # For removed items (original value present, new value empty)
+                elif change_type == 'removed' or (diff.get('value1') and not diff.get('value2')):
+                    orig_cell.fill = removed_fill
+                    ws.cell(row=row_idx, column=6, value="Silindi")
+                
+                # For modified cells, check if numeric and if they increased or decreased
+                elif change_type == 'modified':
+                    try:
+                        # Try to convert to numbers for comparison
+                        orig_val = float(str(diff.get('value1')).replace(',', '.'))
+                        new_val = float(str(diff.get('value2')).replace(',', '.'))
+                        
+                        if new_val > orig_val:
+                            new_cell.fill = increased_fill
+                            ws.cell(row=row_idx, column=6, value="Arttı")
+                        elif new_val < orig_val:
+                            if new_val == 0:
+                                new_cell.fill = zero_fill
+                                ws.cell(row=row_idx, column=6, value="Sıfırlandı")
+                            else:
+                                new_cell.fill = decreased_fill
+                                ws.cell(row=row_idx, column=6, value="Azaldı")
+                    except (ValueError, TypeError):
+                        # If not numeric, just mark as changed
+                        orig_cell.fill = PatternFill(start_color='FFFFE0', end_color='FFFFE0', fill_type='solid')
+                        new_cell.fill = PatternFill(start_color='FFFFE0', end_color='FFFFE0', fill_type='solid')
+                        ws.cell(row=row_idx, column=6, value="Değiştirildi")
+                else:
+                    ws.cell(row=row_idx, column=6, value=change_type)
 
-                # For modified cells, highlight both
-                if diff.get('change_type') == 'modified':
-                    orig_cell.fill = self.changed_fill
-                    new_cell.fill = self.changed_fill
-
-                ws.cell(row=row_idx, column=6, value=diff.get('change_type', ''))
+                # Who modified and when
                 ws.cell(row=row_idx, column=7, value=diff.get('modified_by', 'System'))
                 ws.cell(row=row_idx, column=8, value=diff.get('modified_date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
 
@@ -613,34 +649,39 @@ class ExcelProcessor:
 
             # Sütun genişliklerini optimize et
             column_widths = {
-                'Type': 15,
-                'Row/Element': 12,
-                'Column': 25,
-                'Original Value': 30,
-                'New Value': 30,
-                'Change Type': 15,
-                'Modified By': 20,
-                'Modified Date': 20
+                1: 15,  # Tür
+                2: 12,  # Malzeme
+                3: 25,  # Sütun
+                4: 30,  # Orjinal Değer
+                5: 30,  # Yeni Değer
+                6: 15,  # Değişiklik
+                7: 20,  # Değiştiren
+                8: 20   # Değiştirilme Tarihi
             }
 
-            for col, (header, width) in enumerate(column_widths.items(), 1):
+            for col, width in column_widths.items():
                 column_letter = openpyxl.utils.get_column_letter(col)
                 ws.column_dimensions[column_letter].width = width
                 
                 # Başlık hücrelerini formatla
-                header_cell = ws.cell(row=3, column=col, value=header)
+                header_cell = ws.cell(row=3, column=col)
                 header_cell.fill = header_fill
                 header_cell.font = header_font
                 header_cell.border = thick_border
                 header_cell.alignment = openpyxl.styles.Alignment(horizontal='center')
 
+            # Apply borders to all data cells
+            for row in range(row_offset, len(comparison_results) + row_offset):
+                for col in range(1, 9):
+                    ws.cell(row=row, column=col).border = thin_border
+
             # Create a summary sheet
-            summary_ws = wb.create_sheet(title="Summary")
+            summary_ws = wb.create_sheet(title="Özet")
 
             # Add summary headers
-            summary_ws.cell(row=1, column=1, value="Comparison Summary").font = Font(bold=True, size=14)
-            summary_ws.cell(row=3, column=1, value="Category").font = Font(bold=True)
-            summary_ws.cell(row=3, column=2, value="Count").font = Font(bold=True)
+            summary_ws.cell(row=1, column=1, value="Karşılaştırma Özeti").font = Font(bold=True, size=14)
+            summary_ws.cell(row=3, column=1, value="Kategori").font = Font(bold=True)
+            summary_ws.cell(row=3, column=2, value="Sayı").font = Font(bold=True)
 
             # Calculate summary statistics
             structure_changes = sum(1 for diff in comparison_results if diff.get('type') == 'structure')
@@ -651,12 +692,12 @@ class ExcelProcessor:
 
             # Add summary data
             summary_data = [
-                ("Structure Changes", structure_changes),
-                ("Cell Changes", cell_changes),
-                ("Added Cells", added_cells),
-                ("Removed Cells", removed_cells),
-                ("Modified Cells", modified_cells),
-                ("Total Changes", len(comparison_results))
+                ("Yapı Değişiklikleri", structure_changes),
+                ("Değişiklikler", cell_changes),
+                ("Eklenen Hücreler", added_cells),
+                ("Silinen Hücreler", removed_cells),
+                ("Değiştirilen Hücreler", modified_cells),
+                ("Toplam Değişiklikler", len(comparison_results))
             ]
 
             for idx, (category, count) in enumerate(summary_data, 4):
@@ -666,6 +707,25 @@ class ExcelProcessor:
             # Format summary sheet
             summary_ws.column_dimensions['A'].width = 20
             summary_ws.column_dimensions['B'].width = 10
+            
+            # Add color legend to summary sheet
+            legend_row = len(summary_data) + 6
+            summary_ws.cell(row=legend_row, column=1, value="Renk Göstergeleri:").font = Font(bold=True)
+            
+            # Add color samples with explanations
+            legend_items = [
+                (added_fill, "Yeni Eklenen"),
+                (increased_fill, "Artan Değer"),
+                (decreased_fill, "Azalan Değer"),
+                (removed_fill, "Silinen"),
+                (zero_fill, "Sıfırlanan Değer")
+            ]
+            
+            for i, (color_fill, description) in enumerate(legend_items):
+                current_row = legend_row + i + 1
+                cell = summary_ws.cell(row=current_row, column=1, value="")
+                cell.fill = color_fill
+                summary_ws.cell(row=current_row, column=2, value=description)
 
             # Save to a byte stream instead of a file
             output = io.BytesIO()
@@ -675,7 +735,6 @@ class ExcelProcessor:
             return output
         except Exception as e:
             raise Exception(f"Error generating comparison report: {e}")
-
     def prepare_for_export(self, filepath):
         """Prepare Excel data for export to ERP system"""
         try:

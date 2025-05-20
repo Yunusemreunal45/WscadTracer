@@ -313,15 +313,16 @@ if auth_status:
             # Allow user to select a file
             file_ids = [f[0] for f in files]
             file_names = [f[1] for f in files]
-            selected_file_index = st.selectbox("İşleme için bir dosya seçin", 
-                                              options=range(len(file_ids)),
-                                              format_func=lambda i: file_names[i])
+            selected_file_index = st.selectbox( "İşleme için bir dosya seçin (Dosya 1)", 
+                                             options=range(len(file_ids)),
+                                             format_func=lambda i: file_names[i],
+                                             key="file1_select")
 
             # Allow selecting two files for comparison
-            selected_file_index2 = st.selectbox("İşleme için bir dosya seçin", 
+            selected_file_index2 = st.selectbox("İşleme için bir dosya seçin (Dosya 2)", 
                                              options=range(len(file_ids)),
-                                             format_func=lambda i: file_names[i])
-
+                                             format_func=lambda i: file_names[i],
+                                             key="file2_select")
             col1, col2 = st.columns(2)
             with col1:
                 compare_button = st.button("Seçili Dosyaları Karşılaştır")
@@ -767,18 +768,18 @@ if auth_status:
             if len(logs_df) > 0:
                 # Count activities by type
                 activity_counts = logs_df["Activity"].apply(
-                    lambda x: "File Processing" if "process" in x.lower() else
-                              "Comparison" if "compar" in x.lower() else
-                              "Monitoring" if "monitor" in x.lower() else
-                              "Authentication" if "log" in x.lower() else
-                              "Export" if "export" in x.lower() else
-                              "Other"
+                    lambda x: "Dosya İşlemleri" if "process" in x.lower() else
+                              "Karşılaştırma" if "compar" in x.lower() else
+                              "İzleme" if "monitor" in x.lower() else
+                              "Doğrulama" if "log" in x.lower() else
+                              "Dışarı Aktar" if "export" in x.lower() else
+                              "Diğer"
                 ).value_counts().reset_index()
                 activity_counts.columns = ["Activity Type", "Count"]
 
                 # Create pie chart
                 fig = px.pie(activity_counts, values="Count", names="Activity Type", 
-                             title="Activity Distribution")
+                             title="Faaliyet Dağılımı")
                 st.plotly_chart(fig, use_container_width=True)
 
     # Export to ERP tab

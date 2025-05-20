@@ -6,6 +6,10 @@ import pandas as pd
 from datetime import datetime
 import threading
 
+# Dosya adından uzantıyı kaldıran yardımcı fonksiyon
+def get_filename_without_extension(filename):
+    return os.path.splitext(filename)[0]
+
 class ExcelFileHandler(FileSystemEventHandler):
     def __init__(self, db, excel_processor=None):
         self.db = db
@@ -69,7 +73,11 @@ class ExcelFileHandler(FileSystemEventHandler):
                     with open(event.src_path, 'rb') as f:
                         # Dosyanın okunabilir olduğunu kontrol et
                         f.read(1)
-                    print(f"Yeni Excel dosyası algılandı: {os.path.basename(event.src_path)}")
+                    
+                    # Uzantısız dosya adını kullan
+                    filename_with_ext = os.path.basename(event.src_path)
+                    filename_without_ext = get_filename_without_extension(filename_with_ext)
+                    print(f"Yeni Excel dosyası algılandı: {filename_without_ext}")
                 except Exception as e:
                     print(f"Dosya okuma hatası: {e}")
                     return
@@ -78,37 +86,38 @@ class ExcelFileHandler(FileSystemEventHandler):
 
                 try:
                     if self.excel_processor and not self.excel_processor.is_wscad_excel(event.src_path):
-                        print(f"WSCAD Excel dosyası değil, atlanıyor: {event.src_path}")
+                        print(f"WSCAD Excel dosyası değil, atlanıyor: {filename_without_ext}")
                         return
                 except Exception as e:
                     print(f"WSCAD format kontrolünde hata: {e}")
 
                 try:
-                    filename = os.path.basename(event.src_path)
+                    filename_with_ext = os.path.basename(event.src_path)
+                    filename_without_ext = get_filename_without_extension(filename_with_ext)
                     filesize = os.path.getsize(event.src_path) / 1024
                     
-                    # Dosya zaten var mı kontrol et
-                    existing_file = self.db.execute("SELECT id FROM files WHERE filename = ?", (filename,)).fetchone()
+                    # Dosya zaten var mı kontrol et (tam dosya adıyla)
+                    existing_file = self.db.execute("SELECT id FROM files WHERE filename = ?", (filename_with_ext,)).fetchone()
                     
                     if existing_file:
                         # Dosyayı güncelle
                         self.db.execute(
                             "UPDATE files SET filepath = ?, filesize = ?, detected_time = ? WHERE filename = ?",
-                            (event.src_path, filesize, datetime.now(), filename)
+                            (event.src_path, filesize, datetime.now(), filename_with_ext)
                         )
                         file_id = existing_file[0]
-                        print(f"Excel dosyası güncellendi: {filename}")
+                        print(f"Excel dosyası güncellendi: {filename_without_ext}")
                     else:
                         # Yeni dosya ekle
-                        file_id = self.db.add_file(filename, event.src_path, filesize)
-                        print(f"Yeni Excel dosyası eklendi: {filename}")
+                        file_id = self.db.add_file(filename_with_ext, event.src_path, filesize)
+                        print(f"Yeni Excel dosyası eklendi: {filename_without_ext}")
                     
                     if file_id:
                         self.processed_files.add(event.src_path)
                         # Veritabanını zorla kaydet
                         self.db.commit()
                     else:
-                        print(f"Dosya işlenirken hata oluştu: {filename}")
+                        print(f"Dosya işlenirken hata oluştu: {filename_without_ext}")
                 except Exception as e:
                     print(f"Dosya işleme hatası: {e}")
 
@@ -127,16 +136,17 @@ class ExcelFileHandler(FileSystemEventHandler):
                 except Exception:
                     pass
 
-                filename = os.path.basename(event.src_path)
+                filename_with_ext = os.path.basename(event.src_path)
+                filename_without_ext = get_filename_without_extension(filename_with_ext)
                 filesize = os.path.getsize(event.src_path) / 1024
 
-                file_id = self.db.add_file(filename, event.src_path, filesize)
+                file_id = self.db.add_file(filename_with_ext, event.src_path, filesize)
 
                 if file_id:
-                    print(f"Excel dosyası güncellendi: {filename}")
+                    print(f"Excel dosyası güncellendi: {filename_without_ext}")
                     self.processed_files.add(event.src_path)
                 else:
-                    print(f"Dosya güncellenirken hata oluştu: {filename}")
+                    print(f"Dosya güncellenirken hata oluştu: {filename_without_ext}")
 
 class FileMonitor:
     def __init__(self, directory, db, excel_processor=None):
@@ -184,13 +194,15 @@ class FileMonitor:
                     try:
                         if not os.path.exists(dst_path):
                             shutil.copy2(src_path, dst_path)
-                            print(f"Dosya kopyalandı: {filename}")
+                            filename_without_ext = get_filename_without_extension(filename)
+                            print(f"Dosya kopyalandı: {filename_without_ext}")
 
                             # Trigger file created event
                             mock_event = type('Event', (), {'is_directory': False, 'src_path': dst_path})
                             event_handler.on_created(mock_event)
                     except Exception as e:
-                        print(f"Dosya kopyalama hatası {filename}: {e}")
+                        filename_without_ext = get_filename_without_extension(filename)
+                        print(f"Dosya kopyalama hatası {filename_without_ext}: {e}")
 
         # Supabase bağlantısını başlat
         try:
