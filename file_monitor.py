@@ -1,12 +1,11 @@
 import os
 import time
+import threading
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import pandas as pd
 from datetime import datetime
-import threading
 
-# Dosya adından uzantıyı kaldıran yardımcı fonksiyon
 def get_filename_without_extension(filename):
     return os.path.splitext(filename)[0]
 
@@ -15,7 +14,7 @@ class ExcelFileHandler(FileSystemEventHandler):
         self.db = db
         self.excel_processor = excel_processor
         self.processed_files = set()
-        self.stop_event = threading.Event
+        self.stop_event = threading.Event()
 
     def is_excel_file(self, path):
         return path.lower().endswith(('.xlsx', '.xls'))
@@ -35,92 +34,35 @@ class ExcelFileHandler(FileSystemEventHandler):
                 except:
                     if attempt < max_attempts - 1:
                         time.sleep(0.5)
-                    continue
 
-            # Otomatik karşılaştırma yap
-            if self.excel_processor:
-                try:
-                    comparison_result = self.excel_processor.auto_compare_latest_files(os.path.dirname(event.src_path))
-                    if comparison_result and 'comparison_data' in comparison_result:
-                        print(f"Otomatik karşılaştırma tamamlandı: {len(comparison_result['comparison_data'])} fark bulundu")
+            try:
+                filename_with_ext = os.path.basename(event.src_path)
+                filename_without_ext = get_filename_without_extension(filename_with_ext)
+                filesize = os.path.getsize(event.src_path) / 1024
 
-                    # Supabase'e kaydet
-                    from migrate_to_supabase import get_supabase_connection
-                    supabase_conn = get_supabase_connection()
-                    if supabase_conn:
-                        # Supabase'e kaydet
-                        save_result = self.excel_processor.save_to_supabase({
-                            'file1': comparison_result['file1'],
-                            'file2': comparison_result['file2'],
-                            'comparison_data': comparison_result['comparison_data']
-                        }, supabase_conn)
+                # Dosya zaten var mı kontrol et
+                existing_file = self.db.execute("SELECT id FROM files WHERE filename = ?", (filename_with_ext,)).fetchone()
 
-                        # Revizyon olarak kaydet
-                        revision_result = self.excel_processor.save_comparison_as_revision(
-                            comparison_result,
-                            self.db
-                        )
+                if existing_file:
+                    # Dosyayı güncelle
+                    self.db.execute(
+                        "UPDATE files SET filepath = ?, filesize = ?, detected_time = ? WHERE filename = ?",
+                        (event.src_path, filesize, datetime.now(), filename_with_ext)
+                    )
+                    file_id = existing_file[0]
+                    print(f"Excel dosyası güncellendi: {filename_without_ext}")
+                else:
+                    file_id = self.db.add_file(filename_with_ext, event.src_path, filesize)
+                    print(f"Excel dosyası eklendi: {filename_without_ext}")
 
-                        if save_result and revision_result:
-                            print("Karşılaştırma sonuçları Supabase ve revizyon olarak kaydedildi")
-                except Exception as e:
-                    print(f"Otomatik karşılaştırma hatası: {e}")
+                if file_id:
+                    print(f"Excel dosyası eklendi: {filename_without_ext}")
+                    self.processed_files.add(event.src_path)
+                else:
+                    print(f"Dosya eklenirken hata oluştu: {filename_without_ext}")
 
-            if os.path.exists(event.src_path) and os.access(event.src_path, os.R_OK):
-                # Excel dosyasını binary modda açmayı dene
-                try:
-                    # Dosyanın tam olarak yazılmasını bekle
-                    time.sleep(1)
-                    with open(event.src_path, 'rb') as f:
-                        # Dosyanın okunabilir olduğunu kontrol et
-                        f.read(1)
-                    
-                    # Uzantısız dosya adını kullan
-                    filename_with_ext = os.path.basename(event.src_path)
-                    filename_without_ext = get_filename_without_extension(filename_with_ext)
-                    print(f"Yeni Excel dosyası algılandı: {filename_without_ext}")
-                except Exception as e:
-                    print(f"Dosya okuma hatası: {e}")
-                    return
-                if event.src_path in self.processed_files:
-                    return
-
-                try:
-                    if self.excel_processor and not self.excel_processor.is_wscad_excel(event.src_path):
-                        print(f"WSCAD Excel dosyası değil, atlanıyor: {filename_without_ext}")
-                        return
-                except Exception as e:
-                    print(f"WSCAD format kontrolünde hata: {e}")
-
-                try:
-                    filename_with_ext = os.path.basename(event.src_path)
-                    filename_without_ext = get_filename_without_extension(filename_with_ext)
-                    filesize = os.path.getsize(event.src_path) / 1024
-                    
-                    # Dosya zaten var mı kontrol et (tam dosya adıyla)
-                    existing_file = self.db.execute("SELECT id FROM files WHERE filename = ?", (filename_with_ext,)).fetchone()
-                    
-                    if existing_file:
-                        # Dosyayı güncelle
-                        self.db.execute(
-                            "UPDATE files SET filepath = ?, filesize = ?, detected_time = ? WHERE filename = ?",
-                            (event.src_path, filesize, datetime.now(), filename_with_ext)
-                        )
-                        file_id = existing_file[0]
-                        print(f"Excel dosyası güncellendi: {filename_without_ext}")
-                    else:
-                        # Yeni dosya ekle
-                        file_id = self.db.add_file(filename_with_ext, event.src_path, filesize)
-                        print(f"Yeni Excel dosyası eklendi: {filename_without_ext}")
-                    
-                    if file_id:
-                        self.processed_files.add(event.src_path)
-                        # Veritabanını zorla kaydet
-                        self.db.commit()
-                    else:
-                        print(f"Dosya işlenirken hata oluştu: {filename_without_ext}")
-                except Exception as e:
-                    print(f"Dosya işleme hatası: {e}")
+            except Exception as e:
+                print(f"Dosya işleme hatası: {e}")
 
     def on_modified(self, event):
         if not event.is_directory and self.is_excel_file(event.src_path):
@@ -157,6 +99,19 @@ class FileMonitor:
         self.observer = None
         self.is_running = False
         self._lock = threading.Lock()
+        self.stop_event = threading.Event()
+
+    def clean_database(self):
+        """Veritabanındaki eski dosya kayıtlarını temizle"""
+        try:
+            # Sistemde olmayan dosyaları veritabanından temizle
+            files = self.db.query("SELECT id, filepath FROM files").fetchall()
+            for file in files:
+                if not os.path.exists(file[1]):
+                    self.db.execute("DELETE FROM files WHERE id = ?", (file[0],))
+                    self.db.execute("DELETE FROM file_revisions WHERE file_id = ?", (file[0],))
+        except Exception as e:
+            print(f"Veritabanı temizleme hatası: {e}")
 
     def start_monitoring(self):
         if not os.path.exists(self.directory):
@@ -171,12 +126,12 @@ class FileMonitor:
             event_handler = ExcelFileHandler(self.db, self.excel_processor)
             self.observer.schedule(event_handler, self.directory, recursive=True)
             self.observer.start()
-            
+
             # İlk taramayı yap
             self.scan_existing_files(event_handler)
-            
+
             try:
-                while not getattr(self, 'stop_event', threading.Event()).is_set():
+                while not self.stop_event.is_set():
                     time.sleep(1)
             except Exception as e:
                 print(f"İzleme hatası: {e}")
@@ -184,20 +139,6 @@ class FileMonitor:
                 if self.observer:
                     self.observer.stop()
                     self.observer.join()
-
-    def clean_database(self):
-        """Veritabanından olmayan dosyaları temizle"""
-        try:
-            # Veritabanındaki tüm dosyaları al
-            files = self.db.query("SELECT id, filepath FROM files")
-            for file in files:
-                # Dosya artık dizinde yoksa veya erişilemiyorsa sil
-                if not os.path.exists(file[1]) or not os.access(file[1], os.R_OK):
-                    self.db.execute("DELETE FROM files WHERE id = ?", (file[0],))
-                    self.db.execute("DELETE FROM file_revisions WHERE file_id = ?", (file[0],))
-                    print(f"Silinen kayıt: {file[1]}")
-        except Exception as e:
-            print(f"Veritabanı temizleme hatası: {e}")
 
         self.monitor_thread = threading.Thread(target=monitor_task, daemon=True)
         self.monitor_thread.start()
@@ -247,26 +188,21 @@ class FileMonitor:
         # Mevcut Excel dosyalarını tara
         self.scan_existing_files(event_handler)
 
-        # Otomatik karşılaştırma kaldırıldı
-        print(f"Dizin izlemeye başlandı: {self.directory}")
-
-        self.scan_existing_files(event_handler)
-
     def scan_existing_files(self, event_handler):
         """Mevcut Excel dosyalarını tara ve işle"""
         try:
             # Önce mevcut dosyaları temizle
             event_handler.processed_files.clear()
-            
+
             for root, _, files in os.walk(self.directory):
                 for file in files:
                     # Gizli dosyaları atla
                     if file.startswith('.'):
                         continue
-                        
+
                     if file.lower().endswith(('.xlsx', '.xls')):
                         file_path = os.path.join(root, file)
-                        
+
                         # Dosya okunabilir ve erişilebilir mi kontrol et
                         if os.path.exists(file_path) and os.access(file_path, os.R_OK):
                             try:
@@ -276,31 +212,18 @@ class FileMonitor:
                                     event_handler.on_created(mock_event)
                                     print(f"Excel dosyası işlendi: {file}")
                             except Exception as e:
-                                print(f"Dosya işleme hatası ({file}): {e}")
-                        else:
-                            print(f"Dosya erişilemez: {file}")
+                                print(f"Dosya işleme hatası: {e}")
         except Exception as e:
             print(f"Dosya tarama hatası: {e}")
 
     def stop_monitoring(self):
+        """İzlemeyi durdur"""
         if self.observer:
             self.observer.stop()
             self.observer.join()
+            self.observer = None
             print("Dizin izleme durduruldu")
 
-            # Clear processed files from handler
-            if self.observer.event_handlers:
-                for handler in self.observer.event_handlers:
-                    if isinstance(handler, ExcelFileHandler):
-                        handler.processed_files.clear()
-
-            # Clear files from database
-            if self.db:
-                self.db.execute("DELETE FROM files")
-                self.db.execute("DELETE FROM file_revisions")
-                print("Dosya listesi temizlendi")
-
-        self.stop_event.set()
-
     def get_monitored_directory(self):
+        """İzlenen dizini döndür"""
         return self.directory
