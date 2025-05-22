@@ -713,7 +713,7 @@ if auth_status:
                     st.error(f"Karşılaştırma hatası: {str(e)}")
             else:
                 st.warning("Karşılaştırma için en az iki Bom dosyası gerekli")
-
+                comparisons = db.get_comparison_history() 
                 if comparisons:
                     st.subheader("Bom Karşılaştırma Revizyonları")
                     comp_data = []

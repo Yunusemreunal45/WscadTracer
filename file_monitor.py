@@ -15,6 +15,7 @@ class ExcelFileHandler(FileSystemEventHandler):
         self.db = db
         self.excel_processor = excel_processor
         self.processed_files = set()
+        self.stop_event = threading.Event
 
     def is_excel_file(self, path):
         return path.lower().endswith(('.xlsx', '.xls'))

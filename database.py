@@ -109,7 +109,7 @@ class Database:
         except Exception as e:
             print(f"SQL query error: {e}")
             return []
-
+    
     def query_one(self, query, params=None):
         try:
             with sqlite3.connect(self.db_file, check_same_thread=False) as conn:
@@ -182,7 +182,7 @@ class Database:
     def get_revision_by_id(self, revision_id):
         result = self.query_one("SELECT * FROM file_revisions WHERE id = ?", (revision_id,))
         return dict(result) if result else None
-
+    
     def save_comparison_result(self, file_id, rev1_id, rev2_id, changes_count, comparison_date, comparison_data=None):
         try:
             with sqlite3.connect(self.db_file, check_same_thread=False) as conn:
