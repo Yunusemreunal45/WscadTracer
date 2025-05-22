@@ -162,14 +162,21 @@ class FileMonitor:
         if not os.path.exists(self.directory):
             raise FileNotFoundError(f"İzlenecek dizin bulunamadı veya erişilemez durumda: {self.directory}. Lütfen geçerli bir dizin seçin.")
 
+        # Önce veritabanını temizle
+        self.clean_database()
+
         def monitor_task():
             print(f"Arka plan izleme başlatıldı: {self.directory}")
             self.observer = Observer()
             event_handler = ExcelFileHandler(self.db, self.excel_processor)
             self.observer.schedule(event_handler, self.directory, recursive=True)
             self.observer.start()
+            
+            # İlk taramayı yap
+            self.scan_existing_files(event_handler)
+            
             try:
-                while not self.stop_event.is_set():
+                while not getattr(self, 'stop_event', threading.Event()).is_set():
                     time.sleep(1)
             except Exception as e:
                 print(f"İzleme hatası: {e}")
@@ -177,6 +184,20 @@ class FileMonitor:
                 if self.observer:
                     self.observer.stop()
                     self.observer.join()
+
+    def clean_database(self):
+        """Veritabanından olmayan dosyaları temizle"""
+        try:
+            # Veritabanındaki tüm dosyaları al
+            files = self.db.query("SELECT id, filepath FROM files")
+            for file in files:
+                # Dosya artık dizinde yoksa veya erişilemiyorsa sil
+                if not os.path.exists(file[1]) or not os.access(file[1], os.R_OK):
+                    self.db.execute("DELETE FROM files WHERE id = ?", (file[0],))
+                    self.db.execute("DELETE FROM file_revisions WHERE file_id = ?", (file[0],))
+                    print(f"Silinen kayıt: {file[1]}")
+        except Exception as e:
+            print(f"Veritabanı temizleme hatası: {e}")
 
         self.monitor_thread = threading.Thread(target=monitor_task, daemon=True)
         self.monitor_thread.start()
@@ -265,12 +286,30 @@ class FileMonitor:
         self.scan_existing_files(event_handler)
 
     def scan_existing_files(self, event_handler):
-        for root, _, files in os.walk(self.directory):
-            for file in files:
-                if file.lower().endswith(('.xlsx', '.xls')):
-                    file_path = os.path.join(root, file)
-                    mock_event = type('Event', (), {'is_directory': False, 'src_path': file_path})
-                    event_handler.on_created(mock_event)
+        """Mevcut Excel dosyalarını tara ve işle"""
+        try:
+            # Önce mevcut dosyaları temizle
+            event_handler.processed_files.clear()
+            
+            for root, _, files in os.walk(self.directory):
+                for file in files:
+                    if file.lower().endswith(('.xlsx', '.xls')):
+                        file_path = os.path.join(root, file)
+                        
+                        # Dosya okunabilir ve erişilebilir mi kontrol et
+                        if os.path.exists(file_path) and os.access(file_path, os.R_OK):
+                            try:
+                                # Excel dosyası olduğunu doğrula
+                                if self.excel_processor and self.excel_processor.is_wscad_excel(file_path):
+                                    mock_event = type('Event', (), {'is_directory': False, 'src_path': file_path})
+                                    event_handler.on_created(mock_event)
+                                    print(f"Excel dosyası işlendi: {file}")
+                            except Exception as e:
+                                print(f"Dosya işleme hatası ({file}): {e}")
+                        else:
+                            print(f"Dosya erişilemez: {file}")
+        except Exception as e:
+            print(f"Dosya tarama hatası: {e}")
 
     def stop_monitoring(self):
         if self.observer:
