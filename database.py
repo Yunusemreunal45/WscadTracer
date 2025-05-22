@@ -195,6 +195,27 @@ class Database:
 
                 # Save comparison details with JSON data
                 cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS comparisons (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        file_id INTEGER,
+                        revision1_id INTEGER,
+                        revision2_id INTEGER,
+                        changes_count INTEGER,
+                        comparison_date DATETIME,
+                        comparison_data TEXT,
+                        FOREIGN KEY (file_id) REFERENCES files(id),
+                        FOREIGN KEY (revision1_id) REFERENCES file_revisions(id),
+                        FOREIGN KEY (revision2_id) REFERENCES file_revisions(id)
+                    )
+                """)
+                
+                # Check if file exists
+                cursor.execute("SELECT id FROM files WHERE id = ?", (file_id,))
+                if not cursor.fetchone():
+                    raise ValueError(f"Dosya ID bulunamadı: {file_id}")
+                
+                # Insert comparison result with data
+                cursor.execute("""
                     INSERT INTO comparisons (
                         file_id, 
                         revision1_id, 
@@ -211,17 +232,6 @@ class Database:
                     comparison_date,
                     json.dumps(comparison_data) if comparison_data else None
                 ))
-                
-                # Check if file exists
-                cursor.execute("SELECT id FROM files WHERE id = ?", (file_id,))
-                if not cursor.fetchone():
-                    raise ValueError(f"Dosya ID bulunamadı: {file_id}")
-                
-                # Insert comparison result
-                cursor.execute("""
-                    INSERT INTO comparisons (file_id, revision1_id, revision2_id, changes_count, comparison_date)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (file_id, rev1_id, rev2_id, changes_count, comparison_date))
                 
                 comparison_id = cursor.lastrowid
                 conn.commit()
