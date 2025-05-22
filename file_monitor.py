@@ -247,40 +247,7 @@ class FileMonitor:
         # Mevcut Excel dosyalarını tara
         self.scan_existing_files(event_handler)
 
-        # Önce Excel dosyalarını karşılaştır
-        try:
-            if self.excel_processor:
-                excel_files = self.excel_processor.list_excel_files(self.directory)
-                if len(excel_files) >= 2:
-                    # En son 2 Excel dosyasını karşılaştır
-                    latest_files = excel_files[:2]
-                    comparison_result = self.excel_processor.compare_excel_files(
-                        latest_files[0]['filepath'],
-                        latest_files[1]['filepath']
-                    )
-
-                    if comparison_result:
-                        # Supabase'e kaydet
-                        try:
-                            from migrate_to_supabase import get_supabase_connection
-                            supabase_conn = get_supabase_connection()
-                            if supabase_conn:
-                                self.excel_processor.save_to_supabase({
-                                    'file1': latest_files[0],
-                                    'file2': latest_files[1],
-                                    'comparison_data': comparison_result
-                                }, supabase_conn)
-                                print("Karşılaştırma sonuçları Supabase'e kaydedildi")
-                        except Exception as e:
-                            print(f"Supabase kayıt hatası: {e}")
-
-                        print("Excel karşılaştırma sonucu:", comparison_result)
-                        return comparison_result
-                else:
-                    print("Dizinde en az iki Excel dosyası bulunamadı")
-        except Exception as e:
-            print(f"Excel karşılaştırma hatası: {e}")
-            return None
+        # Otomatik karşılaştırma kaldırıldı
         print(f"Dizin izlemeye başlandı: {self.directory}")
 
         self.scan_existing_files(event_handler)
@@ -293,6 +260,10 @@ class FileMonitor:
             
             for root, _, files in os.walk(self.directory):
                 for file in files:
+                    # Gizli dosyaları atla
+                    if file.startswith('.'):
+                        continue
+                        
                     if file.lower().endswith(('.xlsx', '.xls')):
                         file_path = os.path.join(root, file)
                         
