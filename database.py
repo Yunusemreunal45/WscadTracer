@@ -2,9 +2,11 @@ import os
 import sqlite3
 import threading
 from datetime import datetime
+import json
+import re
 
 class Database:
-    """Thread-safe SQLite database handler"""
+    """Thread-safe SQLite database handler with project management"""
 
     def __init__(self, db_file="wscad_comparison.db"):
         self.db_file = db_file
@@ -69,6 +71,27 @@ class Database:
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )''')
 
+                cursor.execute('''
+                CREATE TABLE IF NOT EXISTS projects (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    description TEXT,
+                    created_by TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT 1
+                )''')
+
+                cursor.execute('''
+                CREATE TABLE IF NOT EXISTS project_comparisons (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id INTEGER NOT NULL,
+                    comparison_id INTEGER NOT NULL,
+                    display_name TEXT,
+                    revision_number INTEGER,
+                    FOREIGN KEY (project_id) REFERENCES projects(id),
+                    FOREIGN KEY (comparison_id) REFERENCES comparisons(id)
+                )''')      
+
                 conn.commit()
                 print("Database tables created successfully")
                 return True
@@ -78,7 +101,7 @@ class Database:
 
     def execute(self, query, params=None):
         try:
-            with self._lock:  # Use thread lock for thread safety
+            with self._lock:
                 with sqlite3.connect(self.db_file, check_same_thread=False) as conn:
                     conn.row_factory = sqlite3.Row
                     cursor = conn.cursor()
@@ -124,22 +147,169 @@ class Database:
             print(f"SQL query error: {e}")
             return None
 
+    # Project management methods
+    def create_project(self, name, description, created_by):
+        """Create a new project"""
+        try:
+            project_id = self.execute(
+                "INSERT INTO projects (name, description, created_by) VALUES (?, ?, ?)",
+                (name, description, created_by)
+            )
+            return project_id
+        except Exception as e:
+            print(f"Error creating project: {e}")
+            return None
+
+    def get_all_projects(self):
+        """Get all active projects"""
+        return self.query("""
+            SELECT id, name, description, created_by, created_at, is_active
+            FROM projects
+            WHERE is_active = 1
+            ORDER BY created_at DESC
+        """)
+
+    def get_project_by_id(self, project_id):
+        """Get project by ID"""
+        result = self.query_one("SELECT * FROM projects WHERE id = ?", (project_id,))
+        return dict(result) if result else None
+
+    def update_project(self, project_id, name=None, description=None):
+        """Update project details"""
+        try:
+            if name and description:
+                return self.execute(
+                    "UPDATE projects SET name = ?, description = ? WHERE id = ?",
+                    (name, description, project_id)
+                )
+            elif name:
+                return self.execute(
+                    "UPDATE projects SET name = ? WHERE id = ?",
+                    (name, project_id)
+                )
+            elif description:
+                return self.execute(
+                    "UPDATE projects SET description = ? WHERE id = ?",
+                    (description, project_id)
+                )
+            return True
+        except Exception as e:
+            print(f"Error updating project: {e}")
+            return False
+
+    def delete_project(self, project_id):
+        """Soft delete project (mark as inactive)"""
+        try:
+            return self.execute(
+                "UPDATE projects SET is_active = 0 WHERE id = ?",
+                (project_id,)
+            )
+        except Exception as e:
+            print(f"Error deleting project: {e}")
+            return False
+
+    def clean_filename_for_display(self, filename):
+        """Clean filename for display by removing extensions and revision suffixes"""
+        # Remove file extension
+        name_without_ext = os.path.splitext(filename)[0]
+        
+        # Remove common revision patterns
+        patterns = [
+            r'_rev\d+$',      # _rev1, _rev2, etc.
+            r'-v\d+$',        # -v1, -v2, etc.
+            r'_v\d+$',        # _v1, _v2, etc.
+            r'\(\d+\)$',      # (1), (2), etc.
+            r'_\d+$',         # _1, _2, etc. (only if at the end)
+        ]
+        
+        cleaned_name = name_without_ext
+        for pattern in patterns:
+            cleaned_name = re.sub(pattern, '', cleaned_name, flags=re.IGNORECASE)
+        
+        return cleaned_name.strip()
+
+    def add_comparison_to_project(self, project_id, comparison_id, file1_name, file2_name):
+        """Add a comparison to a project with cleaned display name"""
+        try:
+            # Generate display name from filenames
+            clean_name1 = self.clean_filename_for_display(file1_name)
+            clean_name2 = self.clean_filename_for_display(file2_name)
+            display_name = f"{clean_name1} vs {clean_name2}"
+            
+            # Get next revision number for this project
+            last_revision = self.query_one("""
+                SELECT MAX(revision_number) as max_rev 
+                FROM project_comparisons 
+                WHERE project_id = ?
+            """, (project_id,))
+            
+            next_revision = (last_revision['max_rev'] or 0) + 1 if last_revision else 1
+            
+            project_comp_id = self.execute("""
+                INSERT INTO project_comparisons 
+                (project_id, comparison_id, display_name, revision_number)
+                VALUES (?, ?, ?, ?)
+            """, (project_id, comparison_id, display_name, next_revision))
+            
+            return project_comp_id
+        except Exception as e:
+            print(f"Error adding comparison to project: {e}")
+            return None
+
+    def get_project_revisions(self, project_id):
+        """Get all revisions (comparisons) for a project"""
+        return self.query("""
+            SELECT 
+                pc.id,
+                pc.display_name,
+                pc.revision_number,
+                c.changes_count,
+                c.comparison_date,
+                c.comparison_data,
+                c.id as comparison_id
+            FROM project_comparisons pc
+            JOIN comparisons c ON pc.comparison_id = c.id
+            WHERE pc.project_id = ?
+            ORDER BY pc.revision_number DESC
+        """, (project_id,))
+
+    def get_project_revision_details(self, project_id, revision_number):
+        """Get detailed information about a specific project revision"""
+        return self.query_one("""
+            SELECT 
+                pc.id,
+                pc.display_name,
+                pc.revision_number,
+                c.changes_count,
+                c.comparison_date,
+                c.comparison_data,
+                c.file_id,
+                c.revision1_id,
+                c.revision2_id,
+                f.filename as base_filename,
+                fr1.revision_path as file1_path,
+                fr2.revision_path as file2_path
+            FROM project_comparisons pc
+            JOIN comparisons c ON pc.comparison_id = c.id
+            JOIN files f ON c.file_id = f.id
+            LEFT JOIN file_revisions fr1 ON c.revision1_id = fr1.id
+            LEFT JOIN file_revisions fr2 ON c.revision2_id = fr2.id
+            WHERE pc.project_id = ? AND pc.revision_number = ?
+        """, (project_id, revision_number))
+
+    # Existing methods (keeping all original functionality)
     def add_file(self, filename, filepath, filesize):
         try:
-            # Check if file exists in database
             existing_file = self.query_one("SELECT * FROM files WHERE filepath = ?", (filepath,))
             
-            # Clean up old files if more than 10 exist
             total_files = self.query_one("SELECT COUNT(*) as count FROM files")
             if total_files and total_files['count'] > 10:
-                # Get oldest files
                 old_files = self.query("""
                     SELECT id, filepath FROM files 
                     ORDER BY detected_time ASC 
                     LIMIT ?
                 """, (total_files['count'] - 10,))
                 
-                # Delete old files
                 for old_file in old_files:
                     if os.path.exists(old_file['filepath']):
                         os.remove(old_file['filepath'])
@@ -189,11 +359,9 @@ class Database:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 
-                # Validate inputs
                 if not all([file_id, rev1_id, rev2_id, changes_count, comparison_date]):
                     raise ValueError("Tüm alanlar zorunludur")
 
-                # Save comparison details with JSON data
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS comparisons (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -209,12 +377,10 @@ class Database:
                     )
                 """)
                 
-                # Check if file exists
                 cursor.execute("SELECT id FROM files WHERE id = ?", (file_id,))
                 if not cursor.fetchone():
                     raise ValueError(f"Dosya ID bulunamadı: {file_id}")
                 
-                # Insert comparison result with data
                 cursor.execute("""
                     INSERT INTO comparisons (
                         file_id, 
