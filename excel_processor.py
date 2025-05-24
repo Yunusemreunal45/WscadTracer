@@ -259,7 +259,7 @@ class ExcelProcessor:
 
             # WSCAD Excel dosyaları için sütun bazlı karşılaştırma
             # Typik WSCAD sütunları için özel kontroller
-            wscad_key_columns = ['Material', 'Malzeme', 'PartNumber', 'Parça No', 'Component', 'Komponent', 'Ref', 'Miktar', 'Quantity', 'Değer', 'Value']
+            wscad_key_columns = ['Material', 'Malzeme', 'PartNumber','İş Emri No', 'Parça No', 'Component', 'Komponent', 'Ref', 'Miktar', 'Quantity', 'Değer', 'Value']
 
             # Önce WSCAD anahtar sütunlarını karşılaştır, sonra diğer sütunları
             priority_cols = [col for col in common_cols if any(key in col for key in wscad_key_columns)]
@@ -550,7 +550,7 @@ class ExcelProcessor:
             ws.cell(row=2, column=1, value=f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
             # Add headers
-            headers = ["Tür", "Malzeme", "Sütun", "Orjinal Değer", "Yeni Değer", "Değişiklik", "Değiştiren", "Değiştirilme Tarihi"]
+            headers = ["Tür", "Malzeme", "Sütun", "Orjinal Değer", "Yeni Değer", "Değişiklik", "Değiştiren", "Değiştirilme Tarihi"," İş Emri No"]
             row_offset = 4  # Start data from row 4
             for col_idx, header in enumerate(headers, 1):
                 cell = ws.cell(row=3, column=col_idx, value=header)
@@ -656,7 +656,8 @@ class ExcelProcessor:
                 5: 30,  # Yeni Değer
                 6: 15,  # Değişiklik
                 7: 20,  # Değiştiren
-                8: 20   # Değiştirilme Tarihi
+                8: 20,  # Değiştirilme Tarihi
+                9: 20   # İş Emri No
             }
 
             for col, width in column_widths.items():

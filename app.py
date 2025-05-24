@@ -140,6 +140,8 @@ if auth_status:
         # Directory monitoring section
         st.subheader("Dizin İzleme")
 
+        st.subheader("İş Emri Bilgisi")
+        is_emri_no = st.text_input("İş Emri No")
         # Default directory options
         default_dirs = {
             "Downloads": os.path.expanduser("~/Downloads"),
@@ -166,10 +168,10 @@ if auth_status:
         if is_valid_dir:
             st.success(f"✅ Geçerli dizin: {directory}")
             excel_files = excel_processor.list_excel_files(directory)
-            if excel_files:
-                st.info(f"📊 Bu dizinde {len(excel_files)} Bom dosyası bulundu")
-                for file in excel_files[:5]:  # Son 5 dosyayı göster
-                    st.text(f"📑 {file['filename']} - {file['modified']}")
+           # if excel_files:
+            #    st.info(f"📊 Bu dizinde {len(excel_files)} Bom dosyası bulundu")
+             #   for file in excel_files[:5]:  # Son 5 dosyayı göster
+              #       st.text(f"📑 {file['filename']} - {file['modified']}")
 
         col1, col2 = st.columns(2)
         with col1:
@@ -195,10 +197,10 @@ if auth_status:
 
             # Show recent file activities
             recent_files = db.get_recent_files(limit=5)
-            if recent_files:
-                st.subheader("Son Dosya Aktiviteleri")
-                for file in recent_files:
-                    st.text(f"📄 {file[1]} - {file[4]}")
+           # if recent_files:
+            #    st.subheader("Son Dosya Aktiviteleri")
+             #   for file in recent_files:
+              #      st.text(f"📄 {file[1]} - {file[4]}")
         else:
             st.warning("Dizin izleme aktif değil")
 

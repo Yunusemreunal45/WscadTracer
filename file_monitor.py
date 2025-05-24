@@ -177,17 +177,6 @@ class FileMonitor:
             print(f"Supabase bağlantı hatası: {e}")
             self.supabase_conn = None
 
-        event_handler = ExcelFileHandler(self.db, self.excel_processor)
-        self.observer = Observer()
-
-        # Dizini izlemeye başla
-        self.observer.schedule(event_handler, self.directory, recursive=True)
-        self.observer.start()
-        print(f"Dizin izlemeye başlandı: {self.directory}")
-
-        # Mevcut Excel dosyalarını tara
-        self.scan_existing_files(event_handler)
-
     def scan_existing_files(self, event_handler):
         """Mevcut Excel dosyalarını tara ve işle"""
         try:
