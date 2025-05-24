@@ -44,31 +44,40 @@ erp_exporter = ERPExporter()
 auth_status, username = authenticate()
 
 def scan_xlsx_files(directory):
-    """Belirtilen dizindeki .xlsx dosyalarını tarar"""
+    """Belirtilen dizindeki .xlsx dosyalarını tarar (tekrarları önler)"""
     try:
         if not os.path.exists(directory):
             return []
         
-        # .xlsx dosyalarını bul
-        xlsx_pattern = os.path.join(directory, "*.xlsx")
-        xlsx_files = glob.glob(xlsx_pattern)
+        # Tüm .xlsx dosyalarını recursive olarak bul
+        xlsx_pattern = os.path.join(directory, "**", "*.xlsx")
+        xlsx_files = glob.glob(xlsx_pattern, recursive=True)
         
-        # Alt dizinleri de tara
-        subdirs_pattern = os.path.join(directory, "**", "*.xlsx")
-        xlsx_files.extend(glob.glob(subdirs_pattern, recursive=True))
+        # Dosya yollarını normalize et ve tekrarları kaldır
+        unique_files = set()
+        for filepath in xlsx_files:
+            normalized_path = os.path.normpath(filepath)
+            unique_files.add(normalized_path)
         
         # Dosya bilgilerini topla
         file_info = []
-        for filepath in xlsx_files:
+        for filepath in unique_files:
             try:
+                # Geçici dosyaları filtrele (~ ile başlayanlar Excel geçici dosyalarıdır)
+                filename = os.path.basename(filepath)
+                if filename.startswith('~$'):
+                    continue
+                    
                 stat = os.stat(filepath)
                 file_info.append({
                     'filepath': filepath,
-                    'filename': os.path.basename(filepath),
+                    'filename': filename,
                     'size_kb': round(stat.st_size / 1024, 2),
                     'modified': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
                 })
-            except:
+            except Exception as e:
+                # Dosya erişim hatası durumunda devam et
+                print(f"Dosya bilgisi alınamadı {filepath}: {e}")
                 continue
         
         # Değiştirilme tarihine göre sırala (en yeni önce)
@@ -78,7 +87,6 @@ def scan_xlsx_files(directory):
     except Exception as e:
         st.error(f"Dosya tarama hatası: {e}")
         return []
-
 # Main application logic
 if auth_status:
     # Initialize session state
@@ -148,12 +156,7 @@ if auth_status:
         else:
             st.error("❌ Geçersiz dizin yolu")
 
-        # Show found files
-        if 'xlsx_files' in st.session_state and st.session_state.xlsx_files:
-            st.subheader("Bulunan Dosyalar")
-            for i, file in enumerate(st.session_state.xlsx_files[:5]):  # İlk 5 dosyayı göster
-                st.text(f"📄 {file['filename']}")
-                st.caption(f"   {file['modified']} - {file['size_kb']} KB")
+       
 
         # Logout button
         if st.button("Çıkış"):
