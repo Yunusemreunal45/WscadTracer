@@ -221,6 +221,20 @@ if auth_status:
                                         file1['filepath'],
                                         file2['filepath']
                                     )
+                                    # Karşılaştırma sonucunu kaydet
+                                    file1_id = db.add_file(file1['filename'], file1['filepath'], int(file1['size_kb'] * 1024))
+                                    file2_id = db.add_file(file2['filename'], file2['filepath'], int(file2['size_kb'] * 1024))
+                                    revs1 = db.get_file_revisions(file1_id)
+                                    revs2 = db.get_file_revisions(file2_id)
+                                    if revs1 and revs2:
+                                        rev1_id = revs1[0]['id']
+                                        rev2_id = revs2[0]['id']
+                                        comparison_id = db.save_comparison_result(
+        file1_id, rev1_id, rev2_id,
+        len(comparison_result),
+        datetime.now(),
+        comparison_result
+    )
                                     
                                     st.session_state.comparison_result = comparison_result
                                     
@@ -553,42 +567,37 @@ if auth_status:
         st.subheader("Manuel Veri Dışa Aktarımı")
 
         # Get all files
-        files = db.get_all_files()
+        comparison_records = db.get_comparison_history()
 
-        if not files:
+
+        if not comparison_records:
             st.info("Dışa aktarma için dosya yok")
         else:
             # Select file to export
-            file_ids = [f[0] for f in files]
-            file_names = [f[1] for f in files]
+            file_ids = [row["id"] for row in comparison_records]
+            file_names = [f"{row['filename']} ({row['comparison_date']})" for row in comparison_records]
+
             selected_export_file = st.selectbox("Dışa aktarılacak dosyayı seçin", 
                                            options=range(len(file_ids)),
                                            format_func=lambda i: file_names[i])
 
-            export_selected_file_id = file_ids[selected_export_file]
+            selected_comparison_id = file_ids[selected_export_file]
 
             if st.button("ERP İhracatı için Dosyayı Hazırla"):
-                file_data = db.get_file_by_id(export_selected_file_id)
+                comp_data_row  =  db.query_one("SELECT comparison_data FROM comparisons WHERE id = ?", (selected_comparison_id,))
+                comparison_data = comp_data_row["comparison_data"]
 
-                if file_data:
-                    try:
-                        # Process the file for export
-                        export_data = excel_processor.prepare_for_export(file_data['filepath'])
+                if comp_data_row and comp_data_row["comparison_data"]:
+                    # JSON önizleme
+                 st.subheader("Veri Önizlemesini Dışa Aktar")
+                 st.json(eval(comparison_data))  # veya json.loads(comparison_data) daha güvenlidir
 
-                        # Show export data preview
-                        st.subheader("Veri Önizlemesini Dışa Aktar")
-                        st.json(export_data)
-
-                        # Save as JSON for download
-                        if st.download_button(
-                            label="Dışa Aktarma Verilerini İndir",
-                            data=erp_exporter.generate_export_file(export_data, "json"),
-                            file_name=f"erp_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                            mime="application/json"
-                        ):
-                            log_activity(f"Downloaded ERP export data for file: {file_data['filename']}", db, username)
-                            st.success("İhracat verileri başarıyla indirildi")
-                    except Exception as e:
-                        st.error(f"Error preparing file for export: {str(e)}")
+                 # İndirme butonu
+                st.download_button(
+                label="Dışa Aktarma Verilerini İndir",
+                data=erp_exporter.generate_export_file(eval(comparison_data), "json"),
+                file_name=f"erp_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json"
+               )
 else:
     st.warning("Sisteme erişmek için lütfen giriş yapın")

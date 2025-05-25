@@ -405,24 +405,22 @@ class Database:
         except Exception as e:
             print(f"Karşılaştırma sonucu kaydedilirken hata: {e}")
             return None
+    
 
     def get_comparison_history(self, file_id=None):
-        if file_id:
-            return self.query("""
-                SELECT c.id, c.file_id, f.filename, c.revision1_id, c.revision2_id, c.changes_count, c.comparison_date
-                FROM comparisons c
-                JOIN files f ON c.file_id = f.id
-                WHERE c.file_id = ?
-                ORDER BY c.comparison_date DESC
-            """, (file_id,))
-        else:
-            return self.query("""
-                SELECT c.id, c.file_id, f.filename, c.revision1_id, c.revision2_id, c.changes_count, c.comparison_date
-                FROM comparisons c
-                JOIN files f ON c.file_id = f.id
-                ORDER BY c.comparison_date DESC
-            """)
-
+         """
+       Yalnızca comparison kayıtlarını ve ilgili dosya adlarını getirir
+        """
+         return self.query("""
+        SELECT 
+            c.id, 
+            c.comparison_date, 
+            c.changes_count, 
+            f.filename
+        FROM comparisons c
+        JOIN files f ON c.file_id = f.id
+        ORDER BY c.comparison_date DESC
+    """)
     def log_activity(self, activity, username=None):
         return self.execute("INSERT INTO activity_logs (username, activity, timestamp) VALUES (?, ?, ?)",
                             (username, activity, datetime.now()))
@@ -442,3 +440,5 @@ class Database:
             ORDER BY detected_time DESC
             LIMIT ?
         """, (limit,))
+    
+    
