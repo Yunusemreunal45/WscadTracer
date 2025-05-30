@@ -16,6 +16,113 @@ from erp_exporter import ERPExporter
 from migrate_to_supabase import SupabaseManager  # SupabaseManager sınıfını import et
 from utils import get_file_info, log_activity
 
+# Helper functions
+def sync_comparison_to_supabase(supabase, db, comparison_data, file1_info, file2_info, username, project_id):
+    """Karşılaştırma sonuçlarını Supabase'e senkronize et"""
+    try:
+        # Get project Supabase ID
+        local_project = db.get_project_by_id(project_id)
+        if not local_project:
+            return False, "Proje bulunamadı"
+            
+        supabase_project_id = local_project.get('supabase_id')
+        
+        # If project not synced to Supabase yet, create it
+        if not supabase_project_id:
+            # Önce projenin Supabase'de var olup olmadığını kontrol et
+            try:
+                # Proje adı ve oluşturan kullanıcıya göre ara
+                cursor = supabase.connection.cursor()
+                cursor.execute("""
+                    SELECT id FROM wscad_projects 
+                    WHERE name = %s AND created_by = %s AND is_active = TRUE
+                """, (local_project['name'], username))
+                existing_project = cursor.fetchone()
+                
+                if existing_project:
+                    supabase_project_id = existing_project[0]
+                    # SQLite'da supabase_id'yi güncelle
+                    db.mark_project_synced_to_supabase(local_project['id'], supabase_project_id)
+                    print(f"✅ Mevcut Supabase projesi bulundu (ID: {supabase_project_id})")
+                else:
+                    # Yeni proje oluştur
+                    supabase_project_id = supabase.create_wscad_project(
+                        local_project['name'],
+                        local_project.get('description', ''),
+                        username,
+                        local_project['id']
+                    )
+                    
+                    if supabase_project_id:
+                        db.mark_project_synced_to_supabase(local_project['id'], supabase_project_id)
+                        print(f"✅ Yeni Supabase projesi oluşturuldu (ID: {supabase_project_id})")
+                    else:
+                        return False, "Proje Supabase'e oluşturulamadı"
+            except Exception as e:
+                print(f"❌ Proje kontrol/oluşturma hatası: {str(e)}")
+                return False, f"Proje senkronizasyon hatası: {str(e)}"
+        
+        # Projenin Supabase'de hala var olduğunu doğrula
+        try:
+            cursor = supabase.connection.cursor()
+            cursor.execute("""
+                SELECT id, name FROM wscad_projects 
+                WHERE id = %s AND is_active = TRUE
+            """, (supabase_project_id,))
+            project_exists = cursor.fetchone()
+            
+            if not project_exists:
+                # Proje silinmiş veya deaktif edilmiş, yeniden oluştur
+                supabase_project_id = supabase.create_wscad_project(
+                    local_project['name'],
+                    local_project.get('description', ''),
+                    username,
+                    local_project['id']
+                )
+                
+                if supabase_project_id:
+                    db.mark_project_synced_to_supabase(local_project['id'], supabase_project_id)
+                    print(f"✅ Proje yeniden oluşturuldu (ID: {supabase_project_id})")
+                else:
+                    return False, "Proje yeniden oluşturulamadı"
+        except Exception as e:
+            print(f"❌ Proje doğrulama hatası: {str(e)}")
+            return False, f"Proje doğrulama hatası: {str(e)}"
+        
+        # Save comparison to Supabase
+        comparison_id = supabase.save_wscad_comparison_to_project(
+            supabase_project_id,
+            comparison_data,
+            file1_info['filename'],
+            file2_info['filename'],
+            file1_info.get('project_info'),
+            file2_info.get('project_info'),
+            username
+        )
+        
+        if comparison_id:
+            # Save to local DB as well
+            local_comparison_id = db.save_comparison_result(
+                file1_id=None,
+                file2_id=None,
+                project_id=project_id,
+                changes_count=len(comparison_data),
+                comparison_data=comparison_data,
+                created_by=username
+            )
+            
+            if local_comparison_id:
+                db.mark_comparison_synced_to_supabase(local_comparison_id, comparison_id)
+                return True, f"Karşılaştırma başarıyla kaydedildi (ID: {comparison_id})"
+            else:
+                return False, "Yerel veritabanına kaydedilemedi"
+        else:
+            return False, "Supabase'e kaydedilemedi"
+            
+    except Exception as e:
+        print(f"❌ Senkronizasyon hatası: {str(e)}")
+        return False, f"Senkronizasyon hatası: {str(e)}"
+
 # Page configuration
 st.set_page_config(
     page_title="WSCAD BOM Comparison System",
@@ -43,23 +150,159 @@ def get_supabase_manager():
     try:
         supabase = SupabaseManager()
         if not supabase.connection or supabase.connection.closed:
-            supabase.reconnect()
+            if not supabase.reconnect():
+                st.error("❌ Supabase bağlantısı kurulamadı!")
+                return None
         
-        # Debug: Tablo yapısını kontrol et ve düzelt
+        # Tablo yapısını kontrol et ve düzelt
         if supabase.is_connected():
-            print("🔧 Supabase tablo yapısı kontrol ediliyor...")
-            if not supabase.debug_table_structure():
-                print("🔧 Tablo yapısı düzeltiliyor...")
-                supabase.fix_table_structure()
-                supabase.debug_table_structure()  # Tekrar kontrol et
+            with st.spinner("🔧 Supabase tablo yapısı kontrol ediliyor..."):
+                try:
+                    # Önce mevcut tabloları kontrol et
+                    cursor = supabase.connection.cursor()
+                    cursor.execute("""
+                        SELECT table_name 
+                        FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name LIKE 'wscad_%'
+                    """)
+                    existing_tables = [row[0] for row in cursor.fetchall()]
+                    
+                    required_tables = [
+                        'wscad_projects',
+                        'wscad_project_comparisons',
+                        'wscad_comparison_changes',
+                        'wscad_quantity_changes',
+                        'wscad_project_statistics'
+                    ]
+                    
+                    missing_tables = [table for table in required_tables if table not in existing_tables]
+                    
+                    if missing_tables:
+                        st.warning(f"⚠️ Eksik tablolar tespit edildi: {', '.join(missing_tables)}")
+                        
+                        # Tabloları yeniden oluştur
+                        try:
+                            # Önce mevcut tabloları temizle
+                            cursor.execute("""
+                                DROP TABLE IF EXISTS wscad_quantity_changes CASCADE;
+                                DROP TABLE IF EXISTS wscad_comparison_changes CASCADE;
+                                DROP TABLE IF EXISTS wscad_project_comparisons CASCADE;
+                                DROP TABLE IF EXISTS wscad_project_statistics CASCADE;
+                                DROP TABLE IF EXISTS wscad_projects CASCADE;
+                            """)
+                            supabase.connection.commit()
+                            
+                            # Tabloları yeniden oluştur
+                            if supabase.setup_wscad_tables():
+                                # Oluşturulan tabloları kontrol et
+                                cursor.execute("""
+                                    SELECT table_name 
+                                    FROM information_schema.tables 
+                                    WHERE table_schema = 'public' 
+                                    AND table_name LIKE 'wscad_%'
+                                """)
+                                created_tables = [row[0] for row in cursor.fetchall()]
+                                
+                                if all(table in created_tables for table in required_tables):
+                                    st.success("✅ Tüm Supabase tabloları başarıyla oluşturuldu")
+                                else:
+                                    still_missing = [table for table in required_tables if table not in created_tables]
+                                    st.error(f"❌ Bazı tablolar oluşturulamadı: {', '.join(still_missing)}")
+                                    return None
+                            else:
+                                st.error("❌ Tablo oluşturma işlemi başarısız")
+                                return None
+                                
+                        except Exception as e:
+                            st.error(f"❌ Tablo oluşturma hatası: {str(e)}")
+                            if supabase.connection and not supabase.connection.closed:
+                                supabase.connection.rollback()
+                            return None
+                    else:
+                        st.success("✅ Tüm gerekli Supabase tabloları mevcut")
+                        
+                    # Tablo yapılarını detaylı kontrol et
+                    for table in required_tables:
+                        try:
+                            cursor.execute(f"""
+                                SELECT column_name, data_type, is_nullable 
+                                FROM information_schema.columns 
+                                WHERE table_name = %s 
+                                ORDER BY ordinal_position
+                            """, (table,))
+                            columns = cursor.fetchall()
+                            if not columns:
+                                st.error(f"❌ {table} tablosu boş veya hatalı")
+                                return None
+                        except Exception as e:
+                            st.error(f"❌ {table} tablosu kontrol hatası: {str(e)}")
+                            return None
+                    
+                    return supabase
+                    
+                except Exception as e:
+                    st.error(f"❌ Tablo yapısı kontrol hatası: {str(e)}")
+                    return None
+                finally:
+                    if cursor:
+                        cursor.close()
         
         return supabase
     except Exception as e:
-        st.error(f"Supabase connection error: {e}")
+        st.error(f"❌ Supabase başlatma hatası: {str(e)}")
         return None
 
 db, setup_success = get_database()
 supabase = get_supabase_manager()
+
+# Supabase bağlantı durumu kontrolü ve gösterimi
+def show_supabase_status():
+    """Supabase bağlantı durumunu göster ve yönet"""
+    if not supabase:
+        st.error("❌ Supabase bağlantısı kurulamadı!")
+        col1, col2 = st.columns([3,1])
+        with col2:
+            if st.button("🔄 Yeniden Bağlanmayı Dene", type="primary"):
+                st.cache_resource.clear()
+                st.rerun()
+        return False
+    
+    try:
+        connection_status = supabase.get_connection_status()
+        
+        if connection_status['status'] == 'connected':
+            # Tablo yapısını da kontrol et
+            try:
+                if supabase.debug_table_structure():
+                    st.success(f"✅ Supabase bağlantısı aktif (v{connection_status.get('version', 'N/A')})")
+                    return True
+                else:
+                    st.warning("⚠️ Supabase bağlantısı var ama tablo yapısı eksik")
+                    if st.button("🔄 Tabloları Yeniden Oluştur", type="primary"):
+                        if supabase.setup_wscad_tables():
+                            st.success("✅ Tablolar başarıyla oluşturuldu")
+                            st.rerun()
+                        else:
+                            st.error("❌ Tablo oluşturma başarısız")
+                    return False
+            except Exception as e:
+                st.error(f"❌ Tablo yapısı kontrol hatası: {str(e)}")
+                return False
+        else:
+            st.error(f"❌ Supabase bağlantı hatası: {connection_status['message']}")
+            col1, col2 = st.columns([3,1])
+            with col2:
+                if st.button("🔄 Yeniden Bağlan", type="primary"):
+                    if supabase.reconnect():
+                        st.success("✅ Supabase bağlantısı yeniden kuruldu!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Yeniden bağlantı başarısız!")
+            return False
+    except Exception as e:
+        st.error(f"❌ Bağlantı durumu kontrol hatası: {str(e)}")
+        return False
 
 # Initialize processors - mevcut sınıf isimleri korundu
 excel_processor = ExcelProcessor()
@@ -129,6 +372,9 @@ else:
 
 # Main application logic
 if auth_status:
+    # Supabase bağlantı durumunu göster
+    supabase_connected = show_supabase_status()
+    
     # Initialize session state
     if 'selected_files' not in st.session_state:
         st.session_state.selected_files = []
@@ -148,6 +394,16 @@ if auth_status:
     # Sidebar
     with st.sidebar:
         st.header(f"Hoşgeldiniz, {username}")
+        
+        # Supabase bağlantı durumu sidebar'da da göster
+        if not supabase_connected:
+            st.error("⚠️ Supabase bağlantısı yok - bazı özellikler kullanılamayabilir")
+            if st.button("🔄 Supabase'e Yeniden Bağlan", key="sidebar_reconnect"):
+                if supabase and supabase.reconnect():
+                    st.success("✅ Bağlantı yeniden kuruldu!")
+                    st.rerun()
+                else:
+                    st.error("❌ Yeniden bağlantı başarısız!")
 
         # Project Management Section
         st.subheader("🏗️ Proje Yönetimi")
@@ -438,61 +694,23 @@ if auth_status:
                                 
                                 try:
                                     with st.spinner("Karşılaştırma kaydediliyor..."):
-                                        # Get project Supabase ID
-                                        local_project = db.get_project_by_id(st.session_state.current_project_id)
-                                        supabase_project_id = None
+                                        success, message = sync_comparison_to_supabase(
+                                            supabase,
+                                            db,
+                                            st.session_state.comparison_result,
+                                            st.session_state.file1_info,
+                                            st.session_state.file2_info,
+                                            username,
+                                            st.session_state.current_project_id
+                                        )
                                         
-                                        if local_project:
-                                            supabase_project_id = local_project.get('supabase_id')
-                                            
-                                            # If not synced to Supabase yet, create it
-                                            if not supabase_project_id:
-                                                supabase_project_id = supabase.create_wscad_project(
-                                                    local_project['name'],
-                                                    local_project['description'],
-                                                    username,
-                                                    local_project['id']
-                                                )
-                                                
-                                                if supabase_project_id:
-                                                    db.mark_project_synced_to_supabase(local_project['id'], supabase_project_id)
-                                        
-                                        if supabase_project_id:
-                                            # Save comparison to Supabase
-                                            comparison_id = supabase.save_wscad_comparison_to_project(
-                                                supabase_project_id,
-                                                st.session_state.comparison_result,
-                                                st.session_state.file1_info['filename'],
-                                                st.session_state.file2_info['filename'],
-                                                st.session_state.file1_info.get('project_info'),
-                                                st.session_state.file2_info.get('project_info'),
-                                                username
-                                            )
-                                            
-                                            if comparison_id:
-                                                # Save to local DB as well
-                                                local_comparison_id = db.save_comparison_result(
-                                                    file1_id=None,
-                                                    file2_id=None,
-                                                    project_id=st.session_state.current_project_id,
-                                                    changes_count=len(st.session_state.comparison_result),
-                                                    comparison_data=st.session_state.comparison_result,
-                                                    created_by=username
-                                                )
-                                                
-                                                if local_comparison_id:
-                                                    db.mark_comparison_synced_to_supabase(local_comparison_id, comparison_id)
-                                                
-                                                st.success("✅ Karşılaştırma sonuçları başarıyla kaydedildi!")
-                                                
-                                                db.log_activity(f"Comparison saved to project (Supabase ID: {comparison_id})", 
-                                                               username, st.session_state.current_project_id,
-                                                               activity_type='save')
-                                            else:
-                                                st.error("Supabase'e kaydetme başarısız")
+                                        if success:
+                                            st.success(f"✅ {message}")
+                                            db.log_activity(f"Comparison saved to project: {message}", 
+                                                          username, st.session_state.current_project_id,
+                                                          activity_type='save')
                                         else:
-                                            st.error("Proje Supabase'e senkronize edilemedi")
-
+                                            st.error(f"❌ {message}")
                                 except Exception as e:
                                     st.error(f"Kaydetme hatası: {str(e)}")
 
@@ -505,6 +723,7 @@ if auth_status:
             if st.session_state.comparison_result is not None:
                 st.subheader("📊 WSCAD BOM Karşılaştırma Sonuçları")
                 
+                # Karşılaştırma sonuçlarını göster
                 if not st.session_state.comparison_result:
                     st.success("✅ WSCAD BOM dosyaları arasında fark bulunamadı")
                 else:
@@ -526,33 +745,96 @@ if auth_status:
                     with col5:
                         quantity_changes = len(diff_df[diff_df['change_type'].str.contains('quantity', na=False)]) if 'change_type' in diff_df.columns else 0
                         st.metric("📊 Miktar Değişiklikleri", quantity_changes)
+
+                # Kaydetme bölümü
+                st.markdown("---")
+                st.subheader("💾 Karşılaştırma Sonuçlarını Kaydet")
+                
+                if not st.session_state.current_project_id:
+                    st.warning("⚠️ Karşılaştırmayı kaydetmek için önce bir proje seçin")
+                elif not supabase_connected:  # supabase_connected değişkenini kullan
+                    st.error("❌ Supabase bağlantısı yok - karşılaştırma kaydedilemiyor")
+                    if st.button("🔄 Supabase'e Yeniden Bağlan", key="save_reconnect"):
+                        if supabase and supabase.reconnect():
+                            st.success("✅ Bağlantı yeniden kuruldu!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Yeniden bağlantı başarısız!")
+                else:
+                    col1, col2 = st.columns([2,1])
+                    with col1:
+                        st.info("""
+                        📝 Karşılaştırma sonuçları şunları içerir:
+                        - Toplam değişiklik sayısı: {}
+                        - Değişen alanlar: {}
+                        - Eklenen kalemler: {}
+                        - Silinen kalemler: {}
+                        - Miktar değişiklikleri: {}
+                        """.format(
+                            len(diff_df),
+                            modified_count,
+                            added_count,
+                            removed_count,
+                            quantity_changes
+                        ))
                     
-                    # Değişiklik türlerine göre filtreleme
-                    change_types = diff_df['change_type'].unique() if 'change_type' in diff_df.columns else []
-                    selected_change_type = st.selectbox("Değişiklik türüne göre filtrele:", 
-                                                       ['Tümü'] + list(change_types))
-                    
-                    # Filtrelenmiş sonuçları göster
-                    if selected_change_type != 'Tümü':
-                        filtered_df = diff_df[diff_df['change_type'] == selected_change_type]
-                    else:
-                        filtered_df = diff_df
-                    
-                    st.dataframe(filtered_df, use_container_width=True)
-                    
-                    # WSCAD BOM raporu indirme
-                    if st.button("📥 WSCAD BOM Karşılaştırma Raporunu İndir"):
-                        try:
-                            report_data = excel_processor.generate_comparison_report(st.session_state.comparison_result)
-                            st.download_button(
-                                label="Excel Raporu İndir",
-                                data=report_data.getvalue(),
-                                file_name=f"wscad_bom_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                help="WSCAD BOM karşılaştırma raporunu Excel dosyası olarak indir"
-                            )
-                        except Exception as e:
-                            st.error(f"Rapor oluşturma hatası: {str(e)}")
+                    with col2:
+                        if st.button("💾 Karşılaştırmayı Projeye Kaydet", 
+                                   type="primary",
+                                   use_container_width=True,
+                                   help="WSCAD BOM karşılaştırmasını aktif projeye revizyon olarak kaydet"):
+                            try:
+                                with st.spinner("Karşılaştırma kaydediliyor..."):
+                                    success, message = sync_comparison_to_supabase(
+                                        supabase,
+                                        db,
+                                        st.session_state.comparison_result,
+                                        st.session_state.file1_info,
+                                        st.session_state.file2_info,
+                                        username,
+                                        st.session_state.current_project_id
+                                    )
+                                    
+                                    if success:
+                                        st.success(f"✅ {message}")
+                                        db.log_activity(f"Comparison saved to project: {message}", 
+                                                      username, st.session_state.current_project_id,
+                                                      activity_type='save')
+                                        # Başarılı kayıttan sonra sayfayı yenile
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ {message}")
+                                
+                            except Exception as e:
+                                st.error(f"Kaydetme hatası: {str(e)}")
+
+                # Değişiklik türlerine göre filtreleme ve diğer içerikler...
+                # Değişiklik türlerine göre filtreleme
+                change_types = diff_df['change_type'].unique() if 'change_type' in diff_df.columns else []
+                selected_change_type = st.selectbox("Değişiklik türüne göre filtrele:", 
+                                                   ['Tümü'] + list(change_types))
+                
+                # Filtrelenmiş sonuçları göster
+                if selected_change_type != 'Tümü':
+                    filtered_df = diff_df[diff_df['change_type'] == selected_change_type]
+                else:
+                    filtered_df = diff_df
+                
+                st.dataframe(filtered_df, use_container_width=True)
+                
+                # WSCAD BOM raporu indirme
+                if st.button("📥 WSCAD BOM Karşılaştırma Raporunu İndir"):
+                    try:
+                        report_data = excel_processor.generate_comparison_report(st.session_state.comparison_result)
+                        st.download_button(
+                            label="Excel Raporu İndir",
+                            data=report_data.getvalue(),
+                            file_name=f"wscad_bom_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            help="WSCAD BOM karşılaştırma raporunu Excel dosyası olarak indir"
+                        )
+                    except Exception as e:
+                        st.error(f"Rapor oluşturma hatası: {str(e)}")
 
     # BOM Comparison tab
     with tab2:
@@ -682,70 +964,67 @@ Tarih: {st.session_state.file2_info['modified']}
                 st.write(f"📄 **Dosya 2:** {result['file2']['filename']}")
                 st.write(f"📊 **BOM Değişiklik Sayısı:** {result['comparison_count']}")
                 
-                # Save to project button
-                if (st.session_state.current_project_id and 
-                    supabase and supabase.is_connected()):
-                    
-                    col1, col2 = st.columns(2)
+                # Kaydetme bölümü
+                st.markdown("---")
+                st.subheader("💾 Otomatik Karşılaştırma Sonuçlarını Kaydet")
+                
+                if not st.session_state.current_project_id:
+                    st.warning("⚠️ Karşılaştırmayı kaydetmek için önce bir proje seçin")
+                elif not supabase_connected:  # supabase_connected değişkenini kullan
+                    st.error("❌ Supabase bağlantısı yok - karşılaştırma kaydedilemiyor")
+                    if st.button("🔄 Supabase'e Yeniden Bağlan", key="auto_save_reconnect"):
+                        if supabase and supabase.reconnect():
+                            st.success("✅ Bağlantı yeniden kuruldu!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Yeniden bağlantı başarısız!")
+                else:
+                    col1, col2 = st.columns([2,1])
                     with col1:
-                        if st.button("💾 Otomatik Karşılaştırmayı Projeye Kaydet"):
-                            try:
-                                with st.spinner("Otomatik karşılaştırma kaydediliyor..."):
-                                    # Get project Supabase ID
-                                    local_project = db.get_project_by_id(st.session_state.current_project_id)
-                                    supabase_project_id = None
-                                    
-                                    if local_project:
-                                        supabase_project_id = local_project.get('supabase_id')
-                                        
-                                        # If not synced to Supabase yet, create it
-                                        if not supabase_project_id:
-                                            supabase_project_id = supabase.create_wscad_project(
-                                                local_project['name'],
-                                                local_project['description'],
-                                                username,
-                                                local_project['id']
-                                            )
-                                            
-                                            if supabase_project_id:
-                                                db.mark_project_synced_to_supabase(local_project['id'], supabase_project_id)
-                                    
-                                    if supabase_project_id:
-                                        comparison_id = supabase.save_wscad_comparison_to_project(
-                                            supabase_project_id,
-                                            result['comparison_data'],
-                                            result['file1']['filename'],
-                                            result['file2']['filename'],
-                                            result['file1'].get('project_info'),
-                                            result['file2'].get('project_info'),
-                                            username
-                                        )
-                                        
-                                        if comparison_id:
-                                            st.success("✅ Otomatik karşılaştırma projeye kaydedildi!")
-                                            db.log_activity(f"Auto-comparison saved to project (ID: {comparison_id})", 
-                                                           username, st.session_state.current_project_id,
-                                                           activity_type='save')
-                                        else:
-                                            st.error("Kaydetme hatası")
-                                    else:
-                                        st.error("Proje Supabase'e senkronize edilemedi")
-                            except Exception as e:
-                                st.error(f"Kaydetme hatası: {str(e)}")
+                        st.info("""
+                        📝 Otomatik karşılaştırma sonuçları şunları içerir:
+                        - Toplam değişiklik sayısı: {}
+                        - Dosya 1: {}
+                        - Dosya 2: {}
+                        - Karşılaştırma tarihi: {}
+                        """.format(
+                            result['comparison_count'],
+                            result['file1']['filename'],
+                            result['file2']['filename'],
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        ))
                     
                     with col2:
-                        if st.button("📥 Otomatik Karşılaştırma Raporunu İndir"):
+                        if st.button("💾 Otomatik Karşılaştırmayı Projeye Kaydet",
+                                    type="primary",
+                                    use_container_width=True,
+                                    help="Otomatik WSCAD BOM karşılaştırmasını aktif projeye revizyon olarak kaydet"):
                             try:
-                                report_data = excel_processor.generate_comparison_report(result['comparison_data'])
-                                st.download_button(
-                                    label="Excel Raporu İndir",
-                                    data=report_data.getvalue(),
-                                    file_name=f"auto_wscad_bom_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                )
+                                with st.spinner("Otomatik karşılaştırma kaydediliyor..."):
+                                    success, message = sync_comparison_to_supabase(
+                                        supabase,
+                                        db,
+                                        result['comparison_data'],
+                                        result['file1'],
+                                        result['file2'],
+                                        username,
+                                        st.session_state.current_project_id
+                                    )
+                                    
+                                    if success:
+                                        st.success(f"✅ {message}")
+                                        db.log_activity(f"Auto-comparison saved to project: {message}", 
+                                                      username, st.session_state.current_project_id,
+                                                      activity_type='save')
+                                        # Başarılı kayıttan sonra sayfayı yenile
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ {message}")
+                                
                             except Exception as e:
-                                st.error(f"Rapor oluşturma hatası: {str(e)}")
-                
+                                st.error(f"Kaydetme hatası: {str(e)}")
+
+                # Karşılaştırma detaylarını göster
                 if result['comparison_data']:
                     comparison_df = pd.DataFrame(result['comparison_data'])
                     st.dataframe(comparison_df, use_container_width=True)
@@ -829,6 +1108,54 @@ Tarih: {st.session_state.file2_info['modified']}
                     st.info("Bu proje için henüz karşılaştırma kaydı bulunmuyor")
             else:
                 st.warning("Proje henüz Supabase'e senkronize edilmemiş. Karşılaştırma yaptıktan sonra revizyonlar görünecektir.")
+
+            # Proje bilgileri bölümünden sonra eklenen kısım
+            if local_project:
+                st.subheader(f"📊 Proje: {local_project['name']}")
+                
+                # Add Supabase sync button
+                col1, col2 = st.columns([3,1])
+                with col2:
+                    if st.button("🔄 Supabase'e Senkronize Et"):
+                        try:
+                            with st.spinner("Proje Supabase'e senkronize ediliyor..."):
+                                # Create or update project in Supabase
+                                supabase_project_id = supabase.create_wscad_project(
+                                    local_project['name'],
+                                    local_project.get('description', ''),
+                                    username,
+                                    local_project['id']
+                                )
+                                
+                                if supabase_project_id:
+                                    # Update local database with Supabase ID
+                                    db.mark_project_synced_to_supabase(
+                                        local_project['id'], 
+                                        supabase_project_id
+                                    )
+                                    st.success("✅ Proje başarıyla Supabase'e senkronize edildi!")
+                                    
+                                    # Log the activity
+                                    db.log_activity(
+                                        f"Project synced to Supabase (ID: {supabase_project_id})",
+                                        username,
+                                        local_project['id'],
+                                        activity_type='sync'
+                                    )
+                                    
+                                    # Refresh the page to show updated status
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Supabase senkronizasyonu başarısız")
+                        except Exception as e:
+                            st.error(f"❌ Senkronizasyon hatası: {str(e)}")
+
+                with col1:
+                    # Show sync status
+                    if local_project.get('supabase_id'):
+                        st.success("✅ Proje Supabase ile senkronize")
+                    else:
+                        st.warning("⚠️ Proje henüz Supabase ile senkronize değil")
 
     # History tab
     with tab5:

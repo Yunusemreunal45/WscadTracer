@@ -88,7 +88,8 @@ class SupabaseManager:
 
                 # Create tables in single transaction
                 cursor.execute("""
-                    CREATE TABLE wscad_projects (
+                    -- Projects table
+                    CREATE TABLE IF NOT EXISTS wscad_projects (
                         id SERIAL PRIMARY KEY,
                         name TEXT NOT NULL,
                         description TEXT,
@@ -98,12 +99,136 @@ class SupabaseManager:
                         sqlite_project_id INTEGER,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         project_type VARCHAR(50) DEFAULT 'wscad',
-                        CONSTRAINT wscad_projects_name_unique UNIQUE (name, created_by)
+                        current_revision INTEGER DEFAULT 0,
+                        supabase_sync_status VARCHAR(20) DEFAULT 'pending',
+                        UNIQUE(name, created_by)
                     );
 
-                    CREATE INDEX idx_wscad_projects_name ON wscad_projects(name);
-                    CREATE INDEX idx_wscad_projects_created_by ON wscad_projects(created_by);
+                    -- Project comparisons table
+                    CREATE TABLE IF NOT EXISTS wscad_project_comparisons (
+                        id SERIAL PRIMARY KEY,
+                        project_id INTEGER REFERENCES wscad_projects(id) ON DELETE CASCADE,
+                        comparison_title TEXT NOT NULL,
+                        file1_name TEXT NOT NULL,
+                        file2_name TEXT NOT NULL,
+                        file1_is_emri_no TEXT,
+                        file1_proje_adi TEXT,
+                        file1_revizyon_no TEXT,
+                        file2_is_emri_no TEXT,
+                        file2_proje_adi TEXT,
+                        file2_revizyon_no TEXT,
+                        changes_count INTEGER DEFAULT 0,
+                        revision_number INTEGER NOT NULL,
+                        created_by TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        comparison_hash TEXT UNIQUE,
+                        comparison_summary JSONB,
+                        file1_info JSONB,
+                        file2_info JSONB,
+                        status VARCHAR(20) DEFAULT 'active',
+                        CONSTRAINT wscad_project_comparisons_project_revision_unique 
+                            UNIQUE (project_id, revision_number)
+                    );
+
+                    -- Comparison changes table
+                    CREATE TABLE IF NOT EXISTS wscad_comparison_changes (
+                        id SERIAL PRIMARY KEY,
+                        project_comparison_id INTEGER REFERENCES wscad_project_comparisons(id) ON DELETE CASCADE,
+                        change_type TEXT NOT NULL,
+                        poz_no TEXT,
+                        parca_no TEXT,
+                        parca_adi TEXT,
+                        column_name TEXT,
+                        old_value TEXT,
+                        new_value TEXT,
+                        severity TEXT DEFAULT 'medium',
+                        description TEXT,
+                        modified_by TEXT,
+                        modified_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        change_category TEXT,
+                        impact_level TEXT,
+                        CONSTRAINT valid_change_type CHECK (change_type IN ('added', 'removed', 'modified', 'quantity_changed')),
+                        CONSTRAINT valid_severity CHECK (severity IN ('low', 'medium', 'high', 'critical'))
+                    );
+
+                    -- Quantity changes table
+                    CREATE TABLE IF NOT EXISTS wscad_quantity_changes (
+                        id SERIAL PRIMARY KEY,
+                        project_comparison_id INTEGER REFERENCES wscad_project_comparisons(id) ON DELETE CASCADE,
+                        poz_no TEXT NOT NULL,
+                        parca_no TEXT,
+                        parca_adi TEXT,
+                        old_quantity NUMERIC,
+                        new_quantity NUMERIC,
+                        quantity_change_type TEXT,
+                        percentage_change NUMERIC,
+                        absolute_change NUMERIC,
+                        unit_type TEXT DEFAULT 'piece',
+                        impact_assessment TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT valid_quantity_type CHECK (quantity_change_type IN ('increase', 'decrease', 'new', 'removed'))
+                    );
+
+                    -- Project statistics table
+                    CREATE TABLE IF NOT EXISTS wscad_project_statistics (
+                        id SERIAL PRIMARY KEY,
+                        project_id INTEGER REFERENCES wscad_projects(id) ON DELETE CASCADE UNIQUE,
+                        total_comparisons INTEGER DEFAULT 0,
+                        total_changes INTEGER DEFAULT 0,
+                        total_critical_changes INTEGER DEFAULT 0,
+                        total_added_items INTEGER DEFAULT 0,
+                        total_removed_items INTEGER DEFAULT 0,
+                        total_quantity_changes INTEGER DEFAULT 0,
+                        last_comparison_date TIMESTAMP,
+                        most_active_contributor TEXT,
+                        average_changes_per_comparison NUMERIC DEFAULT 0,
+                        trend_analysis JSONB,
+                        performance_metrics JSONB,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+
+                    -- Create indexes for better performance
+                    CREATE INDEX IF NOT EXISTS idx_wscad_projects_name ON wscad_projects(name);
+                    CREATE INDEX IF NOT EXISTS idx_wscad_projects_created_by ON wscad_projects(created_by);
+                    CREATE INDEX IF NOT EXISTS idx_wscad_projects_sync_status ON wscad_projects(supabase_sync_status);
+                    
+                    CREATE INDEX IF NOT EXISTS idx_wscad_comparisons_project ON wscad_project_comparisons(project_id);
+                    CREATE INDEX IF NOT EXISTS idx_wscad_comparisons_revision ON wscad_project_comparisons(revision_number);
+                    CREATE INDEX IF NOT EXISTS idx_wscad_comparisons_created_at ON wscad_project_comparisons(created_at);
+                    CREATE INDEX IF NOT EXISTS idx_wscad_comparisons_status ON wscad_project_comparisons(status);
+                    
+                    CREATE INDEX IF NOT EXISTS idx_wscad_changes_comparison ON wscad_comparison_changes(project_comparison_id);
+                    CREATE INDEX IF NOT EXISTS idx_wscad_changes_type ON wscad_comparison_changes(change_type);
+                    CREATE INDEX IF NOT EXISTS idx_wscad_changes_severity ON wscad_comparison_changes(severity);
+                    CREATE INDEX IF NOT EXISTS idx_wscad_changes_poz ON wscad_comparison_changes(poz_no);
+                    
+                    CREATE INDEX IF NOT EXISTS idx_wscad_quantity_comparison ON wscad_quantity_changes(project_comparison_id);
+                    CREATE INDEX IF NOT EXISTS idx_wscad_quantity_poz ON wscad_quantity_changes(poz_no);
+                    CREATE INDEX IF NOT EXISTS idx_wscad_quantity_type ON wscad_quantity_changes(quantity_change_type);
                 """)
+
+                # Verify table creation
+                cursor.execute("""
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name LIKE 'wscad_%'
+                """)
+                created_tables = [row[0] for row in cursor.fetchall()]
+                
+                required_tables = [
+                    'wscad_projects',
+                    'wscad_project_comparisons',
+                    'wscad_comparison_changes',
+                    'wscad_quantity_changes',
+                    'wscad_project_statistics'
+                ]
+                
+                if not all(table in created_tables for table in required_tables):
+                    missing_tables = [table for table in required_tables if table not in created_tables]
+                    print(f"❌ Bazı tablolar oluşturulamadı: {', '.join(missing_tables)}")
+                    self.connection.rollback()
+                    return False
 
                 self.connection.commit()
                 print("✅ WSCAD tables created successfully")
@@ -122,21 +247,43 @@ class SupabaseManager:
                 self.reconnect()
 
             with self.connection.cursor() as cursor:
+                # Önce projenin var olup olmadığını kontrol et
                 cursor.execute("""
-                    INSERT INTO wscad_projects 
-                    (name, description, created_by, sqlite_project_id, created_at)
-                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                    ON CONFLICT ON CONSTRAINT wscad_projects_name_unique 
-                    DO UPDATE SET
-                        description = EXCLUDED.description,
-                        updated_at = CURRENT_TIMESTAMP
-                    RETURNING id
-                """, (name, description, created_by, sqlite_project_id))
+                    SELECT id FROM wscad_projects 
+                    WHERE name = %s AND created_by = %s
+                """, (name, created_by))
                 
-                project_id = cursor.fetchone()[0]
-                self.connection.commit()
-                print(f"✅ Project created/updated successfully: {name} (ID: {project_id})")
-                return project_id
+                existing_project = cursor.fetchone()
+                
+                if existing_project:
+                    project_id = existing_project[0]
+                    # Projeyi güncelle
+                    cursor.execute("""
+                        UPDATE wscad_projects 
+                        SET description = %s,
+                            updated_at = CURRENT_TIMESTAMP,
+                            sqlite_project_id = COALESCE(%s, sqlite_project_id)
+                        WHERE id = %s
+                        RETURNING id
+                    """, (description, sqlite_project_id, project_id))
+                    
+                    project_id = cursor.fetchone()[0]
+                    self.connection.commit()
+                    print(f"✅ Project updated successfully: {name} (ID: {project_id})")
+                    return project_id
+                else:
+                    # Yeni proje oluştur
+                    cursor.execute("""
+                        INSERT INTO wscad_projects 
+                        (name, description, created_by, sqlite_project_id, created_at)
+                        VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        RETURNING id
+                    """, (name, description, created_by, sqlite_project_id))
+                    
+                    project_id = cursor.fetchone()[0]
+                    self.connection.commit()
+                    print(f"✅ Project created successfully: {name} (ID: {project_id})")
+                    return project_id
 
         except Exception as e:
             print(f"❌ Project creation error: {str(e)}")
@@ -191,6 +338,19 @@ class SupabaseManager:
 
             cursor = self.connection.cursor()
             
+            # Önce projenin var olduğunu kontrol et
+            cursor.execute("""
+                SELECT id, name, description 
+                FROM wscad_projects 
+                WHERE id = %s
+            """, (project_id,))
+            
+            project = cursor.fetchone()
+            
+            if not project:
+                print(f"❌ Project {project_id} not found in Supabase")
+                return None
+            
             # Revizyon numarasını hesapla
             cursor.execute("""
                 SELECT COALESCE(MAX(revision_number), 0) + 1 
@@ -223,97 +383,105 @@ class SupabaseManager:
             summary_stats = self._generate_comparison_summary(comparison_data)
             comparison_summary = json.dumps(summary_stats, ensure_ascii=False)
 
-            # Ana karşılaştırma kaydı
-            cursor.execute("""
-                INSERT INTO wscad_project_comparisons 
-                (project_id, comparison_title, revision_number, file1_name, file2_name, 
-                 file1_is_emri_no, file1_proje_adi, file1_revizyon_no, 
-                 file2_is_emri_no, file2_proje_adi, file2_revizyon_no,
-                 changes_count, created_by, comparison_hash, comparison_summary,
-                 file1_info, file2_info)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-            """, (
-                project_id, comparison_title, next_revision, file1_name, file2_name,
-                file1_is_emri, file1_proje, file1_rev, 
-                file2_is_emri, file2_proje, file2_rev,
-                len(comparison_data), created_by, comparison_hash, comparison_summary,
-                json.dumps(file1_info) if file1_info else None,
-                json.dumps(file2_info) if file2_info else None
-            ))
-            
-            comparison_id = cursor.fetchone()[0]
+            try:
+                # Ana karşılaştırma kaydı
+                cursor.execute("""
+                    INSERT INTO wscad_project_comparisons 
+                    (project_id, comparison_title, revision_number, file1_name, file2_name, 
+                     file1_is_emri_no, file1_proje_adi, file1_revizyon_no, 
+                     file2_is_emri_no, file2_proje_adi, file2_revizyon_no,
+                     changes_count, created_by, comparison_hash, comparison_summary,
+                     file1_info, file2_info, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (
+                    project_id, comparison_title, next_revision, file1_name, file2_name,
+                    file1_is_emri, file1_proje, file1_rev, 
+                    file2_is_emri, file2_proje, file2_rev,
+                    len(comparison_data), created_by, comparison_hash, comparison_summary,
+                    json.dumps(file1_info) if file1_info else None,
+                    json.dumps(file2_info) if file2_info else None,
+                    'active'  # status parameter
+                ))
+                
+                comparison_id = cursor.fetchone()[0]
+                
+                # Değişiklikleri ve miktar değişikliklerini kaydet
+                if comparison_data:
+                    changes_to_insert = []
+                    quantity_changes = []
 
-            # Değişiklikleri ve miktar değişikliklerini kaydet
-            if comparison_data:
-                changes_to_insert = []
-                quantity_changes = []
+                    for change in comparison_data:
+                        # Değişiklik şiddetini belirle
+                        severity = self._determine_change_severity(change)
+                        change_category = self._determine_change_category(change)
+                        impact_level = self._determine_impact_level(change)
+                        
+                        changes_to_insert.append((
+                            comparison_id,
+                            change.get('change_type', 'modified'),
+                            change.get('poz_no', '')[:50],
+                            change.get('parca_no', '')[:100],
+                            change.get('parca_adi', '')[:200],
+                            change.get('column', '')[:50],
+                            str(change.get('value1', ''))[:500],
+                            str(change.get('value2', ''))[:500],
+                            severity,
+                            change.get('description', '')[:1000],
+                            created_by,
+                            change_category,
+                            impact_level
+                        ))
 
-                for change in comparison_data:
-                    # Değişiklik şiddetini belirle
-                    severity = self._determine_change_severity(change)
-                    change_category = self._determine_change_category(change)
-                    impact_level = self._determine_impact_level(change)
-                    
-                    changes_to_insert.append((
-                        comparison_id,
-                        change.get('change_type', 'modified'),
-                        change.get('poz_no', '')[:50],
-                        change.get('parca_no', '')[:100],
-                        change.get('parca_adi', '')[:200],
-                        change.get('column', '')[:50],
-                        str(change.get('value1', ''))[:500],
-                        str(change.get('value2', ''))[:500],
-                        severity,
-                        change.get('description', '')[:1000],
-                        created_by,
-                        change_category,
-                        impact_level
-                    ))
+                        # Miktar değişikliği varsa kaydet
+                        if self._is_quantity_change(change):
+                            qty_change = self._prepare_quantity_change(change, comparison_id)
+                            if qty_change:
+                                quantity_changes.append(qty_change)
 
-                    # Miktar değişikliği varsa kaydet
-                    if self._is_quantity_change(change):
-                        qty_change = self._prepare_quantity_change(change, comparison_id)
-                        if qty_change:
-                            quantity_changes.append(qty_change)
+                    # Toplu insert işlemleri
+                    if changes_to_insert:
+                        psycopg2.extras.execute_batch(cursor, """
+                            INSERT INTO wscad_comparison_changes 
+                            (project_comparison_id, change_type, poz_no, parca_no, parca_adi,
+                             column_name, old_value, new_value, severity, description, modified_by,
+                             change_category, impact_level)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, changes_to_insert, page_size=1000)
 
-                # Toplu insert işlemleri
-                if changes_to_insert:
-                    psycopg2.extras.execute_batch(cursor, """
-                        INSERT INTO wscad_comparison_changes 
-                        (project_comparison_id, change_type, poz_no, parca_no, parca_adi,
-                         column_name, old_value, new_value, severity, description, modified_by,
-                         change_category, impact_level)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, changes_to_insert, page_size=1000)
+                    if quantity_changes:
+                        psycopg2.extras.execute_batch(cursor, """
+                            INSERT INTO wscad_quantity_changes 
+                            (project_comparison_id, poz_no, parca_no, parca_adi,
+                             old_quantity, new_quantity, quantity_change_type, percentage_change,
+                             absolute_change, unit_type, impact_assessment)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, quantity_changes, page_size=500)
 
-                if quantity_changes:
-                    psycopg2.extras.execute_batch(cursor, """
-                        INSERT INTO wscad_quantity_changes 
-                        (project_comparison_id, poz_no, parca_no, parca_adi,
-                         old_quantity, new_quantity, quantity_change_type, percentage_change,
-                         absolute_change, unit_type, impact_assessment)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, quantity_changes, page_size=500)
+                # İstatistikleri güncelle
+                self._update_project_statistics(cursor, project_id, len(comparison_data), created_by, comparison_data)
 
-            # İstatistikleri güncelle
-            self._update_project_statistics(cursor, project_id, len(comparison_data), created_by, comparison_data)
+                # Proje updated_at zamanını ve current_revision'ını güncelle
+                cursor.execute("""
+                    UPDATE wscad_projects 
+                    SET updated_at = CURRENT_TIMESTAMP, current_revision = %s
+                    WHERE id = %s
+                """, (next_revision, project_id))
 
-            # Proje updated_at zamanını ve current_revision'ını güncelle
-            cursor.execute("""
-                UPDATE wscad_projects 
-                SET updated_at = CURRENT_TIMESTAMP, current_revision = %s
-                WHERE id = %s
-            """, (next_revision, project_id))
+                self.connection.commit()
+                print(f"✅ WSCAD comparison saved to Supabase: Rev {next_revision} (ID: {comparison_id})")
+                return comparison_id
 
-            self.connection.commit()
-            print(f"✅ WSCAD comparison saved to Supabase: Rev {next_revision} (ID: {comparison_id})")
-            return comparison_id
+            except psycopg2.Error as e:
+                print(f"❌ Database error: {str(e)}")
+                if self.connection and not self.connection.closed:
+                    self.connection.rollback()
+                return None
 
         except Exception as e:
+            print(f"❌ Supabase kaydetme hatası: {str(e)}")
             if self.connection and not self.connection.closed:
                 self.connection.rollback()
-            print(f"❌ Supabase kaydetme hatası: {str(e)}")
             return None
     
     def _generate_comparison_summary(self, comparison_data):
@@ -518,9 +686,9 @@ class SupabaseManager:
                     project_id, total_comparisons, total_changes,
                     total_critical_changes, total_added_items, total_removed_items,
                     total_quantity_changes, last_comparison_date, most_active_contributor,
-                    trend_analysis, performance_metrics
+                    trend_analysis, performance_metrics, updated_at
                 ) VALUES (
-                    %s, 1, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s
+                    %s, 1, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s, CURRENT_TIMESTAMP
                 )
                 ON CONFLICT (project_id) DO UPDATE SET
                     total_comparisons = wscad_project_statistics.total_comparisons + 1,
@@ -536,10 +704,13 @@ class SupabaseManager:
                     trend_analysis = %s,
                     performance_metrics = %s,
                     updated_at = CURRENT_TIMESTAMP
-            """, (project_id, changes_count, critical_changes, added_items, removed_items,
-                  quantity_changes, created_by, json.dumps(trend_data), json.dumps(performance_metrics),
-                  changes_count, critical_changes, added_items, removed_items, quantity_changes,
-                  created_by, changes_count, json.dumps(trend_data), json.dumps(performance_metrics)))
+                )
+            """, (
+                project_id, changes_count, critical_changes, added_items, removed_items,
+                quantity_changes, created_by, json.dumps(trend_data), json.dumps(performance_metrics),
+                changes_count, critical_changes, added_items, removed_items, quantity_changes,
+                created_by, changes_count, json.dumps(trend_data), json.dumps(performance_metrics)
+            ))
             
         except Exception as e:
             print(f"⚠️ Statistics update error: {e}")
@@ -675,7 +846,7 @@ class SupabaseManager:
                     parca_adi,
                     COUNT(*) as change_count,
                     COUNT(CASE WHEN severity = 'high' THEN 1 END) as critical_changes,
-                    MAX(wcc.created_at) as last_change_date
+                    MAX(wcc.modified_date) as last_change_date
                 FROM wscad_comparison_changes wcc
                 JOIN wscad_project_comparisons wpc ON wcc.project_comparison_id = wpc.id
                 WHERE wpc.project_id = %s AND poz_no IS NOT NULL AND poz_no != ''
@@ -1115,21 +1286,53 @@ def migrate_wscad_projects_to_supabase(sqlite_db, supabase_manager):
         
         cursor = sqlite_conn.cursor()
         
+        # Önce mevcut projeleri kontrol et
+        cursor.execute("SELECT COUNT(*) FROM projects WHERE is_active = 1")
+        total_projects = cursor.fetchone()[0]
+        print(f"📊 Toplam aktif proje sayısı: {total_projects}")
+        
         # Senkronize edilmemiş projeleri al
         cursor.execute("""
-            SELECT * FROM projects 
-            WHERE (sync_status != 'synced' OR sync_status IS NULL)
-            AND is_active = 1
+            SELECT p.*, 
+                   CASE 
+                       WHEN p.supabase_id IS NULL THEN 'not_synced'
+                       WHEN p.sync_status IS NULL THEN 'not_synced'
+                       ELSE p.sync_status 
+                   END as current_sync_status
+            FROM projects p
+            WHERE p.is_active = 1
+            AND (
+                p.sync_status != 'synced' 
+                OR p.sync_status IS NULL 
+                OR p.supabase_id IS NULL
+            )
         """)
         projects = cursor.fetchall()
         
+        print(f"🔄 Senkronize edilecek proje sayısı: {len(projects)}")
+        
         successful_syncs = 0
         failed_syncs = 0
+        skipped_syncs = 0
         
         for project in projects:
-            print(f"🔄 Proje senkronize ediliyor: {project['name']}")
+            print(f"\n🔄 Proje senkronize ediliyor: {project['name']} (ID: {project['id']})")
+            print(f"   Mevcut durum: {project['current_sync_status']}")
             
             try:
+                # Supabase'de projenin var olup olmadığını kontrol et
+                if project['supabase_id']:
+                    cursor.execute("""
+                        SELECT id FROM wscad_projects 
+                        WHERE id = %s
+                    """, (project['supabase_id'],))
+                    existing_project = cursor.fetchone()
+                    
+                    if existing_project:
+                        print(f"   ✅ Proje zaten Supabase'de mevcut (ID: {project['supabase_id']})")
+                        skipped_syncs += 1
+                        continue
+                
                 # Supabase'e proje oluştur
                 supabase_project_id = supabase_manager.create_wscad_project(
                     project['name'],
@@ -1142,28 +1345,36 @@ def migrate_wscad_projects_to_supabase(sqlite_db, supabase_manager):
                     # SQLite'da senkronizasyon durumunu güncelle
                     cursor.execute("""
                         UPDATE projects 
-                        SET supabase_id = ?, sync_status = 'synced'
+                        SET supabase_id = ?, 
+                            sync_status = 'synced',
+                            sync_date = CURRENT_TIMESTAMP
                         WHERE id = ?
                     """, (supabase_project_id, project['id']))
                     sqlite_conn.commit()
                     
-                    print(f"✅ Proje senkronize edildi: {project['name']}")
+                    print(f"   ✅ Proje başarıyla senkronize edildi")
+                    print(f"   📌 SQLite ID: {project['id']} -> Supabase ID: {supabase_project_id}")
                     successful_syncs += 1
                 else:
-                    print(f"❌ Proje senkronize edilemedi: {project['name']}")
+                    print(f"   ❌ Proje oluşturulamadı")
                     failed_syncs += 1
                     
             except Exception as e:
-                print(f"❌ Proje {project['name']} senkronizasyon hatası: {e}")
+                print(f"   ❌ Proje senkronizasyon hatası: {str(e)}")
                 failed_syncs += 1
         
         sqlite_conn.close()
         
-        print(f"📊 Migration özeti: {successful_syncs} başarılı, {failed_syncs} başarısız")
+        print(f"\n📊 Migration özeti:")
+        print(f"   ✅ Başarılı: {successful_syncs}")
+        print(f"   ❌ Başarısız: {failed_syncs}")
+        print(f"   ⏭️ Atlanan: {skipped_syncs}")
+        print(f"   📝 Toplam: {total_projects}")
+        
         return successful_syncs > 0
         
     except Exception as e:
-        print(f"❌ Proje migration hatası: {e}")
+        print(f"❌ Proje migration hatası: {str(e)}")
         return False
 
 def migrate_existing_comparisons_to_supabase(sqlite_db, supabase_manager):
@@ -1179,7 +1390,7 @@ def migrate_existing_comparisons_to_supabase(sqlite_db, supabase_manager):
         cursor.execute("""
             SELECT wc.*, p.supabase_id as project_supabase_id
             FROM wscad_comparisons wc
-            JOIN projects p ON wc.file_id = p.id
+            JOIN projects p ON wc.project_id = p.id
             WHERE wc.supabase_saved != 1 AND p.supabase_id IS NOT NULL
         """)
         comparisons = cursor.fetchall()
@@ -1250,3 +1461,37 @@ def migrate_existing_comparisons_to_supabase(sqlite_db, supabase_manager):
     except Exception as e:
         print(f"❌ Karşılaştırma migration hatası: {e}")
         return False
+
+if __name__ == "__main__":
+    print("🚀 WSCAD Migration Tool")
+    print("=" * 50)
+    
+    # Initialize Supabase manager
+    print("\n📡 Supabase bağlantısı kuruluyor...")
+    supabase_manager = SupabaseManager()
+    
+    if not supabase_manager.is_connected():
+        print("❌ Supabase bağlantısı kurulamadı!")
+        exit(1)
+    
+    # Fix table structure first
+    print("\n🔧 Tablo yapısı kontrol ediliyor...")
+    if not supabase_manager.fix_table_structure():
+        print("❌ Tablo yapısı düzeltilemedi!")
+        exit(1)
+    
+    # Migrate projects
+    print("\n🔄 Projeler migrate ediliyor...")
+    if migrate_wscad_projects_to_supabase("wscad_comparison.db", supabase_manager):
+        print("\n✅ Proje migration tamamlandı!")
+    else:
+        print("\n❌ Proje migration başarısız!")
+    
+    # Migrate comparisons
+    print("\n🔄 Karşılaştırmalar migrate ediliyor...")
+    if migrate_existing_comparisons_to_supabase("wscad_comparison.db", supabase_manager):
+        print("\n✅ Karşılaştırma migration tamamlandı!")
+    else:
+        print("\n❌ Karşılaştırma migration başarısız!")
+    
+    print("\n✨ Migration işlemi tamamlandı!")
