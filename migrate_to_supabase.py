@@ -77,7 +77,7 @@ class SupabaseManager:
                 return False
 
             with self.connection.cursor() as cursor:
-                # Drop and recreate tables
+                # First drop all existing tables
                 cursor.execute("""
                     DROP TABLE IF EXISTS wscad_quantity_changes CASCADE;
                     DROP TABLE IF EXISTS wscad_comparison_changes CASCADE;
@@ -86,7 +86,7 @@ class SupabaseManager:
                     DROP TABLE IF EXISTS wscad_projects CASCADE;
                 """)
 
-                # Create tables with proper constraints
+                # Create tables in single transaction
                 cursor.execute("""
                     CREATE TABLE wscad_projects (
                         id SERIAL PRIMARY KEY,
@@ -98,28 +98,11 @@ class SupabaseManager:
                         sqlite_project_id INTEGER,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         project_type VARCHAR(50) DEFAULT 'wscad',
-                        CONSTRAINT wscad_projects_unique_name UNIQUE (name, created_by)
+                        CONSTRAINT wscad_projects_name_unique UNIQUE (name, created_by)
                     );
 
-                    CREATE TABLE wscad_project_statistics (
-                        id SERIAL PRIMARY KEY,
-                        project_id INTEGER REFERENCES wscad_projects(id) ON DELETE CASCADE,
-                        total_comparisons INTEGER DEFAULT 0,
-                        total_changes INTEGER DEFAULT 0,
-                        last_comparison_date TIMESTAMP,
-                        CONSTRAINT wscad_project_stats_unique UNIQUE (project_id)
-                    );
-
-                    CREATE TABLE wscad_project_comparisons (
-                        id SERIAL PRIMARY KEY,
-                        project_id INTEGER REFERENCES wscad_projects(id),
-                        comparison_title TEXT NOT NULL,
-                        revision_number INTEGER,
-                        changes_count INTEGER DEFAULT 0,
-                        created_by TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        CONSTRAINT wscad_project_comp_unique UNIQUE (project_id, revision_number)
-                    );
+                    CREATE INDEX idx_wscad_projects_name ON wscad_projects(name);
+                    CREATE INDEX idx_wscad_projects_created_by ON wscad_projects(created_by);
                 """)
 
                 self.connection.commit()
@@ -143,7 +126,7 @@ class SupabaseManager:
                     INSERT INTO wscad_projects 
                     (name, description, created_by, sqlite_project_id, created_at)
                     VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                    ON CONFLICT ON CONSTRAINT wscad_projects_unique_name 
+                    ON CONFLICT ON CONSTRAINT wscad_projects_name_unique 
                     DO UPDATE SET
                         description = EXCLUDED.description,
                         updated_at = CURRENT_TIMESTAMP
@@ -151,15 +134,6 @@ class SupabaseManager:
                 """, (name, description, created_by, sqlite_project_id))
                 
                 project_id = cursor.fetchone()[0]
-                
-                # Create or update statistics record
-                cursor.execute("""
-                    INSERT INTO wscad_project_statistics (project_id)
-                    VALUES (%s)
-                    ON CONFLICT ON CONSTRAINT wscad_project_stats_unique 
-                    DO NOTHING
-                """, (project_id,))
-                
                 self.connection.commit()
                 print(f"✅ Project created/updated successfully: {name} (ID: {project_id})")
                 return project_id
