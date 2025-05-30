@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 import glob
 import json
+import time
 
 # Import custom modules - dosya isimleri değişmedi
 from auth import authenticate
@@ -28,6 +29,11 @@ def get_database():
     """Singleton veri tabanı oluştur (thread güvenliği için)"""
     db = Database()
     setup_success = db.setup_database()
+    
+    # Migrate existing database schema if needed
+    if setup_success:
+        db.migrate_database_schema()
+    
     return db, setup_success
 
 # Initialize Supabase manager (karşılaştırma sonuçları için)
@@ -38,6 +44,15 @@ def get_supabase_manager():
         supabase = SupabaseManager()
         if not supabase.connection or supabase.connection.closed:
             supabase.reconnect()
+        
+        # Debug: Tablo yapısını kontrol et ve düzelt
+        if supabase.is_connected():
+            print("🔧 Supabase tablo yapısı kontrol ediliyor...")
+            if not supabase.debug_table_structure():
+                print("🔧 Tablo yapısı düzeltiliyor...")
+                supabase.fix_table_structure()
+                supabase.debug_table_structure()  # Tekrar kontrol et
+        
         return supabase
     except Exception as e:
         st.error(f"Supabase connection error: {e}")
@@ -145,18 +160,11 @@ if auth_status:
                 # Safely extract project names and revisions
                 project_options = ["Yeni Proje Oluştur"]
                 for p in projects:
-                    if isinstance(p, tuple):
-                        # If project is returned as tuple from database
-                        proj_dict = {
-                            'id': p[0],
-                            'name': p[1],
-                            'current_revision': p[2] if len(p) > 2 else 0
-                        }
-                    elif isinstance(p, dict):
-                        # If project is already a dictionary
-                        proj_dict = p
+                    # Convert sqlite3.Row to dict if needed
+                    if hasattr(p, 'keys'):
+                        proj_dict = dict(p)
                     else:
-                        continue
+                        proj_dict = p
                         
                     project_name = proj_dict.get('name', 'Unnamed Project')
                     revision = proj_dict.get('current_revision', 0)
@@ -167,17 +175,26 @@ if auth_status:
                 if selected_project != "Yeni Proje Oluştur":
                     # Extract project info from selection
                     project_name = selected_project.split(" (Rev:")[0]
-                    selected_proj = next((p for p in projects if (isinstance(p, dict) and p.get('name') == project_name) or 
-                                        (isinstance(p, tuple) and p[1] == project_name)), None)
+                    
+                    # Find the project in the list
+                    selected_proj = None
+                    for p in projects:
+                        if hasattr(p, 'keys'):
+                            proj_dict = dict(p)
+                        else:
+                            proj_dict = p
+                        
+                        if proj_dict.get('name') == project_name:
+                            selected_proj = proj_dict
+                            break
                     
                     if selected_proj:
-                        if isinstance(selected_proj, tuple):
-                            st.session_state.current_project_id = selected_proj[0]
-                        else:
-                            st.session_state.current_project_id = selected_proj.get('id')
-                            
+                        st.session_state.current_project_id = selected_proj.get('id')
                         # Show project info
                         st.success(f"✅ Aktif Proje: {project_name}")
+                    else:
+                        st.session_state.current_project_id = None
+                        
             except Exception as e:
                 st.error(f"Proje seçimi hatası: {str(e)}")
                 st.session_state.current_project_id = None
@@ -186,46 +203,71 @@ if auth_status:
             st.session_state.current_project_id = None
 
         # New project creation
-        if st.session_state.current_project_id is None:
-            with st.expander("➕ Yeni WSCAD Projesi Oluştur"):
-                new_project_name = st.text_input("Proje Adı", key="new_project_name", 
-                                                placeholder="örn: WSCAD_Proje_24057")
-                new_project_desc = st.text_area("Proje Açıklaması", key="new_project_desc",
-                                               placeholder="Bu projenin amacı ve kapsamı")
-                
-                if st.button("Proje Oluştur"):
-                    if new_project_name:
-                        try:
-                            # Create project in local SQLite
-                            project_id = db.create_project(new_project_name, new_project_desc, username)
-                            
-                            if project_id:
-                                st.session_state.current_project_id = project_id
-                                st.success(f"✅ Proje '{new_project_name}' oluşturuldu!")
+        if st.session_state.current_project_id is None or st.button("➕ Yeni Proje Oluştur"):
+            with st.expander("🆕 Yeni WSCAD Projesi", expanded=(st.session_state.current_project_id is None)):
+                with st.form("new_project_form"):
+                    new_project_name = st.text_input("Proje Adı", 
+                                                    placeholder="örn: WSCAD_Proje_24057")
+                    new_project_desc = st.text_area("Proje Açıklaması",
+                                                   placeholder="Bu projenin amacı ve kapsamı")
+                    
+                    create_project_btn = st.form_submit_button("🚀 Proje Oluştur")
+                    
+                    if create_project_btn:
+                        if new_project_name and new_project_name.strip():
+                            try:
+                                # First create project in local SQLite
+                                project_id = db.create_project(
+                                    new_project_name.strip(), 
+                                    new_project_desc.strip() if new_project_desc else "", 
+                                    username
+                                )
                                 
-                                # Sync to Supabase if available
-                                if supabase:
-                                    try:
-                                        supabase_project_id = supabase.create_wscad_project(
-                                            new_project_name, 
-                                            new_project_desc, 
-                                            username, 
-                                            project_id
-                                        )
-                                        
-                                        if supabase_project_id:
-                                            db.mark_project_synced_to_supabase(project_id, supabase_project_id)
-                                            st.info("☁️ Proje Supabase'e kaydedildi")
-                                    except Exception as e:
-                                        st.warning(f"Supabase senkronizasyon hatası: {e}")
-                            
-                            db.log_activity(f"Yeni WSCAD projesi oluşturuldu: {new_project_name}", 
-                                          username, project_id)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Proje oluşturma hatası: {str(e)}")
-                    else:
-                        st.warning("Proje adı gerekli")
+                                if project_id:
+                                    st.session_state.current_project_id = project_id
+                                    
+                                    # Then sync to Supabase with retry logic
+                                    supabase_sync_success = False
+                                    retry_count = 0
+                                    max_retries = 3
+                                    
+                                    while not supabase_sync_success and retry_count < max_retries:
+                                        try:
+                                            if supabase and supabase.is_connected():
+                                                supabase_project_id = supabase.create_wscad_project(
+                                                    new_project_name.strip(), 
+                                                    new_project_desc.strip() if new_project_desc else "", 
+                                                    username, 
+                                                    project_id
+                                                )
+                                                
+                                                if supabase_project_id:
+                                                    db.mark_project_synced_to_supabase(project_id, supabase_project_id)
+                                                    st.success(f"✅ Proje '{new_project_name}' oluşturuldu ve senkronize edildi!")
+                                                    supabase_sync_success = True
+                                                else:
+                                                    raise Exception("Supabase project ID is None")
+                                            else:
+                                                raise Exception("Supabase connection is not available")
+                                                
+                                        except Exception as e:
+                                            retry_count += 1
+                                            if retry_count < max_retries:
+                                                time.sleep(1)  # Wait before retry
+                                                if supabase:
+                                                    supabase.reconnect()
+                                            else:
+                                                st.warning(f"⚠️ Supabase senkronizasyonu başarısız (yerel proje oluşturuldu): {str(e)}")
+                                    
+                                    db.log_activity(f"Yeni WSCAD projesi oluşturuldu: {new_project_name}", 
+                                                  username, project_id)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Proje oluşturulamadı")
+                            except Exception as e:
+                                st.error(f"❌ Proje oluşturma hatası: {str(e)}")
+                        else:
+                            st.warning("⚠️ Proje adı gerekli!")
 
         # Directory selection section
         st.subheader("📁 WSCAD Dosya Dizini")
@@ -260,7 +302,7 @@ if auth_status:
                     if wscad_files:
                         st.success(f"📊 {len(wscad_files)} adet WSCAD BOM dosyası bulundu")
                         db.log_activity(f"WSCAD directory scanned: {directory}, found {len(wscad_files)} files", 
-                                      username, st.session_state.current_project_id)
+                                      username, st.session_state.current_project_id, activity_type='scan')
                         
                         # Dosyaları yerel veritabanına ekle
                         for wscad_file in wscad_files:
@@ -294,7 +336,7 @@ if auth_status:
 
         # Logout button
         if st.button("Çıkış"):
-            db.log_activity("Kullanıcı çıkış yaptı", username)
+            db.log_activity("Kullanıcı çıkış yaptı", username, activity_type='auth')
             st.session_state.clear()
             st.rerun()
 
@@ -381,46 +423,75 @@ if auth_status:
                                     
                                     db.log_activity(f"WSCAD BOM compared: {file1['filename']} vs {file2['filename']}", 
                                                    username, st.session_state.current_project_id, 
-                                                   {'file1': file1['filename'], 'file2': file2['filename']})
+                                                   {'file1': file1['filename'], 'file2': file2['filename']},
+                                                   activity_type='comparison')
                                     
                                 except Exception as e:
                                     st.error(f"WSCAD BOM karşılaştırma hatası: {str(e)}")
                     
                     with col2:
-                        if (st.session_state.comparison_result and 
+                        if (st.session_state.comparison_result is not None and 
                             st.session_state.current_project_id and 
-                            supabase and supabase.connection):
+                            supabase and supabase.is_connected()):
                             if st.button("💾 Karşılaştırmayı Projeye Kaydet", 
                                        help="WSCAD BOM karşılaştırmasını aktif projeye revizyon olarak kaydet"):
                                 
                                 try:
-                                    # Save comparison to local DB first
-                                    comparison_id = db.save_comparison_result(
-                                        file1_id=st.session_state.file1_info.get('id'),
-                                        file2_id=st.session_state.file2_info.get('id'),
-                                        project_id=st.session_state.current_project_id,
-                                        changes_count=len(st.session_state.comparison_result)
-                                    )
-                                    
-                                    if comparison_id and supabase and supabase.connection:
-                                        # Then sync to Supabase
-                                        supabase_id = supabase.save_wscad_comparison_to_project(
-                                            st.session_state.current_project_id,
-                                            st.session_state.comparison_result,
-                                            st.session_state.file1_info['filename'],
-                                            st.session_state.file2_info['filename'],
-                                            st.session_state.file1_info.get('project_info'),
-                                            st.session_state.file2_info.get('project_info'),
-                                            username
-                                        )
+                                    with st.spinner("Karşılaştırma kaydediliyor..."):
+                                        # Get project Supabase ID
+                                        local_project = db.get_project_by_id(st.session_state.current_project_id)
+                                        supabase_project_id = None
                                         
-                                        if supabase_id:
-                                            db.mark_comparison_synced_to_supabase(comparison_id, supabase_id)
-                                            st.success("✅ Karşılaştırma sonuçları kaydedildi ve senkronize edildi")
+                                        if local_project:
+                                            supabase_project_id = local_project.get('supabase_id')
+                                            
+                                            # If not synced to Supabase yet, create it
+                                            if not supabase_project_id:
+                                                supabase_project_id = supabase.create_wscad_project(
+                                                    local_project['name'],
+                                                    local_project['description'],
+                                                    username,
+                                                    local_project['id']
+                                                )
+                                                
+                                                if supabase_project_id:
+                                                    db.mark_project_synced_to_supabase(local_project['id'], supabase_project_id)
+                                        
+                                        if supabase_project_id:
+                                            # Save comparison to Supabase
+                                            comparison_id = supabase.save_wscad_comparison_to_project(
+                                                supabase_project_id,
+                                                st.session_state.comparison_result,
+                                                st.session_state.file1_info['filename'],
+                                                st.session_state.file2_info['filename'],
+                                                st.session_state.file1_info.get('project_info'),
+                                                st.session_state.file2_info.get('project_info'),
+                                                username
+                                            )
+                                            
+                                            if comparison_id:
+                                                # Save to local DB as well
+                                                local_comparison_id = db.save_comparison_result(
+                                                    file1_id=None,
+                                                    file2_id=None,
+                                                    project_id=st.session_state.current_project_id,
+                                                    changes_count=len(st.session_state.comparison_result),
+                                                    comparison_data=st.session_state.comparison_result,
+                                                    created_by=username
+                                                )
+                                                
+                                                if local_comparison_id:
+                                                    db.mark_comparison_synced_to_supabase(local_comparison_id, comparison_id)
+                                                
+                                                st.success("✅ Karşılaştırma sonuçları başarıyla kaydedildi!")
+                                                
+                                                db.log_activity(f"Comparison saved to project (Supabase ID: {comparison_id})", 
+                                                               username, st.session_state.current_project_id,
+                                                               activity_type='save')
+                                            else:
+                                                st.error("Supabase'e kaydetme başarısız")
                                         else:
-                                            st.warning("Yerel kayıt başarılı fakat Supabase senkronizasyonu başarısız")
-                                    else:
-                                        st.error("Karşılaştırma sonuçları kaydedilemedi")
+                                            st.error("Proje Supabase'e senkronize edilemedi")
 
                                 except Exception as e:
                                     st.error(f"Kaydetme hatası: {str(e)}")
@@ -431,7 +502,7 @@ if auth_status:
                     st.info("ℹ️ BOM karşılaştırması için 2 WSCAD dosyası seçin")
 
             # Display WSCAD BOM comparison results if available
-            if st.session_state.comparison_result:
+            if st.session_state.comparison_result is not None:
                 st.subheader("📊 WSCAD BOM Karşılaştırma Sonuçları")
                 
                 if not st.session_state.comparison_result:
@@ -487,7 +558,7 @@ if auth_status:
     with tab2:
         st.header("Detaylı BOM Karşılaştırma")
         
-        if st.session_state.comparison_result:
+        if st.session_state.comparison_result is not None:
             # Karşılaştırma özeti
             st.subheader("📋 Karşılaştırma Özeti")
             
@@ -513,60 +584,43 @@ Proje: {st.session_state.file2_info.get('proje_adi', 'N/A')}
 Revizyon: {st.session_state.file2_info.get('revizyon_no', 'N/A')}
 Tarih: {st.session_state.file2_info['modified']}
                     """)
-            if st.button("💾 Karşılaştırmayı Kaydet"):
-                try:
-                    with st.spinner("Karşılaştırma kaydediliyor..."):
-                        comparison_id = supabase.save_wscad_comparison_to_project(
-                            project_id=st.session_state.current_project_id,
-                            comparison_data=st.session_state.comparison_result,
-                            file1_name=st.session_state.file1_info['filename'],
-                            file2_name=st.session_state.file2_info['filename'],
-                            file1_info=st.session_state.file1_info,
-                            file2_info=st.session_state.file2_info,
-                            created_by=username
-                        )
-                        
-                        if comparison_id:
-                            st.success("✅ Karşılaştırma başarıyla kaydedildi!")
-                            st.session_state.last_saved_comparison = comparison_id
-                        else:
-                            st.error("Kaydetme başarısız oldu")
-                            
-                except Exception as e:
-                    st.error(f"Kaydetme hatası: {str(e)}")
+            
             # Değişiklik analizi
             st.subheader("🔍 Değişiklik Analizi")
             
-            diff_df = pd.DataFrame(st.session_state.comparison_result)
-            
-            # POZ NO bazında gruplandırma
-            if 'poz_no' in diff_df.columns:
-                poz_changes = diff_df.groupby('poz_no').size().reset_index(name='change_count')
-                poz_changes = poz_changes.sort_values('change_count', ascending=False).head(10)
+            if st.session_state.comparison_result:
+                diff_df = pd.DataFrame(st.session_state.comparison_result)
                 
-                if not poz_changes.empty:
-                    st.write("**En Çok Değişiklik Olan POZ Numaraları:**")
-                    fig = px.bar(poz_changes, x='poz_no', y='change_count', 
-                               title="POZ NO Bazında Değişiklik Sayısı")
-                    st.plotly_chart(fig, use_container_width=True)
-            
-            # Sütun bazında değişiklik analizi
-            if 'column' in diff_df.columns:
-                column_changes = diff_df.groupby('column').size().reset_index(name='change_count')
-                column_changes = column_changes.sort_values('change_count', ascending=False)
+                # POZ NO bazında gruplandırma
+                if 'poz_no' in diff_df.columns:
+                    poz_changes = diff_df.groupby('poz_no').size().reset_index(name='change_count')
+                    poz_changes = poz_changes.sort_values('change_count', ascending=False).head(10)
+                    
+                    if not poz_changes.empty:
+                        st.write("**En Çok Değişiklik Olan POZ Numaraları:**")
+                        fig = px.bar(poz_changes, x='poz_no', y='change_count', 
+                                   title="POZ NO Bazında Değişiklik Sayısı")
+                        st.plotly_chart(fig, use_container_width=True)
                 
-                if not column_changes.empty:
-                    st.write("**Sütun Bazında Değişiklik Dağılımı:**")
-                    fig = px.pie(column_changes, values='change_count', names='column',
-                               title="Hangi Sütunlarda Daha Çok Değişiklik Var?")
-                    st.plotly_chart(fig, use_container_width=True)
-            
-            # Kritik değişiklikler
-            if 'severity' in diff_df.columns:
-                critical_changes = diff_df[diff_df['severity'] == 'high']
-                if not critical_changes.empty:
-                    st.subheader("🚨 Kritik Değişiklikler")
-                    st.dataframe(critical_changes, use_container_width=True)
+                # Sütun bazında değişiklik analizi
+                if 'column' in diff_df.columns:
+                    column_changes = diff_df.groupby('column').size().reset_index(name='change_count')
+                    column_changes = column_changes.sort_values('change_count', ascending=False)
+                    
+                    if not column_changes.empty:
+                        st.write("**Sütun Bazında Değişiklik Dağılımı:**")
+                        fig = px.pie(column_changes, values='change_count', names='column',
+                                   title="Hangi Sütunlarda Daha Çok Değişiklik Var?")
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                # Kritik değişiklikler
+                if 'severity' in diff_df.columns:
+                    critical_changes = diff_df[diff_df['severity'] == 'high']
+                    if not critical_changes.empty:
+                        st.subheader("🚨 Kritik Değişiklikler")
+                        st.dataframe(critical_changes, use_container_width=True)
+            else:
+                st.info("Karşılaştırma sonucunda değişiklik bulunamadı")
         else:
             st.info("Detaylı analiz için önce bir karşılaştırma yapın.")
 
@@ -614,7 +668,7 @@ Tarih: {st.session_state.file2_info['modified']}
                             st.info(f"📊 Toplam {len(comparison_result)} BOM değişikliği bulundu")
                             
                             db.log_activity(f"Auto-compared WSCAD BOM: {file1['filename']} vs {file2['filename']}", 
-                                          username, st.session_state.current_project_id)
+                                          username, st.session_state.current_project_id, activity_type='auto_comparison')
                             
                         except Exception as e:
                             st.error(f"❌ Otomatik WSCAD BOM karşılaştırma hatası: {str(e)}")
@@ -630,28 +684,52 @@ Tarih: {st.session_state.file2_info['modified']}
                 
                 # Save to project button
                 if (st.session_state.current_project_id and 
-                    supabase and supabase.connection):
+                    supabase and supabase.is_connected()):
                     
                     col1, col2 = st.columns(2)
                     with col1:
                         if st.button("💾 Otomatik Karşılaştırmayı Projeye Kaydet"):
                             try:
-                                comparison_id = supabase.save_wscad_comparison_to_project(
-                                    st.session_state.current_project_id,
-                                    result['comparison_data'],
-                                    result['file1']['filename'],
-                                    result['file2']['filename'],
-                                    result['file1'].get('project_info'),
-                                    result['file2'].get('project_info'),
-                                    username
-                                )
-                                
-                                if comparison_id:
-                                    st.success("✅ Otomatik karşılaştırma projeye kaydedildi!")
-                                    db.log_activity(f"Auto-comparison saved to project (ID: {comparison_id})", 
-                                                   username, st.session_state.current_project_id)
-                                else:
-                                    st.error("Kaydetme hatası")
+                                with st.spinner("Otomatik karşılaştırma kaydediliyor..."):
+                                    # Get project Supabase ID
+                                    local_project = db.get_project_by_id(st.session_state.current_project_id)
+                                    supabase_project_id = None
+                                    
+                                    if local_project:
+                                        supabase_project_id = local_project.get('supabase_id')
+                                        
+                                        # If not synced to Supabase yet, create it
+                                        if not supabase_project_id:
+                                            supabase_project_id = supabase.create_wscad_project(
+                                                local_project['name'],
+                                                local_project['description'],
+                                                username,
+                                                local_project['id']
+                                            )
+                                            
+                                            if supabase_project_id:
+                                                db.mark_project_synced_to_supabase(local_project['id'], supabase_project_id)
+                                    
+                                    if supabase_project_id:
+                                        comparison_id = supabase.save_wscad_comparison_to_project(
+                                            supabase_project_id,
+                                            result['comparison_data'],
+                                            result['file1']['filename'],
+                                            result['file2']['filename'],
+                                            result['file1'].get('project_info'),
+                                            result['file2'].get('project_info'),
+                                            username
+                                        )
+                                        
+                                        if comparison_id:
+                                            st.success("✅ Otomatik karşılaştırma projeye kaydedildi!")
+                                            db.log_activity(f"Auto-comparison saved to project (ID: {comparison_id})", 
+                                                           username, st.session_state.current_project_id,
+                                                           activity_type='save')
+                                        else:
+                                            st.error("Kaydetme hatası")
+                                    else:
+                                        st.error("Proje Supabase'e senkronize edilemedi")
                             except Exception as e:
                                 st.error(f"Kaydetme hatası: {str(e)}")
                     
@@ -678,26 +756,27 @@ Tarih: {st.session_state.file2_info['modified']}
         
         if not st.session_state.current_project_id:
             st.warning("📋 Proje revizyonlarını görmek için önce bir proje seçin")
-        elif not supabase or not supabase.connection:
+        elif not supabase or not supabase.is_connected():
             st.error("❌ Supabase bağlantısı yok - revizyonlar görüntülenemiyor")
         else:
             # Project info
-            projects = supabase.get_wscad_projects()
-            current_project = None
-            
-            # Find current project in Supabase
             local_project = db.get_project_by_id(st.session_state.current_project_id)
-            if local_project and local_project.get('supabase_id'):
-                current_project = next((p for p in projects if p['id'] == local_project['supabase_id']), None)
             
-            if current_project:
-                st.subheader(f"📊 Proje: {current_project['name']}")
-                st.write(f"**Açıklama:** {current_project['description']}")
-                st.write(f"**Oluşturan:** {current_project['created_by']}")
-                st.write(f"**Oluşturulma:** {current_project['created_at']}")
+            if not local_project:
+                st.error("Proje bulunamadı")
                 
+            
+            st.subheader(f"📊 Proje: {local_project['name']}")
+            st.write(f"**Açıklama:** {local_project.get('description', 'N/A')}")
+            st.write(f"**Oluşturan:** {local_project['created_by']}")
+            st.write(f"**Oluşturulma:** {local_project['created_at']}")
+            
+            # Get Supabase project ID
+            supabase_project_id = local_project.get('supabase_id')
+            
+            if supabase_project_id:
                 # Project statistics
-                stats = supabase.get_wscad_project_statistics(current_project['id'])
+                stats = supabase.get_wscad_project_statistics(supabase_project_id)
                 if stats and stats['general']:
                     st.subheader("📈 Proje İstatistikleri")
                     
@@ -712,7 +791,7 @@ Tarih: {st.session_state.file2_info['modified']}
                         st.metric("Silinen Kalemler", stats['general']['total_removed_items'] or 0)
                 
                 # Project comparisons
-                comparisons = supabase.get_wscad_project_comparisons(current_project['id'])
+                comparisons = supabase.get_wscad_project_comparisons(supabase_project_id)
                 if comparisons:
                     st.subheader("🔍 Proje Karşılaştırma Geçmişi")
                     
@@ -749,7 +828,7 @@ Tarih: {st.session_state.file2_info['modified']}
                 else:
                     st.info("Bu proje için henüz karşılaştırma kaydı bulunmuyor")
             else:
-                st.warning("Proje Supabase'de bulunamadı. Lütfen projeyi senkronize edin.")
+                st.warning("Proje henüz Supabase'e senkronize edilmemiş. Karşılaştırma yaptıktan sonra revizyonlar görünecektir.")
 
     # History tab
     with tab5:
@@ -764,7 +843,23 @@ Tarih: {st.session_state.file2_info['modified']}
             if not activity_logs:
                 st.info("Henüz etkinlik kaydedilmedi")
             else:
-                logs_df = pd.DataFrame(activity_logs, columns=["ID", "User", "Activity", "Timestamp", "Project_ID", "File_Info"])
+                logs_data = []
+                for log in activity_logs:
+                    if hasattr(log, 'keys'):
+                        log_dict = dict(log)
+                    else:
+                        log_dict = log
+                    
+                    logs_data.append({
+                        'ID': log_dict.get('id'),
+                        'User': log_dict.get('username'),
+                        'Activity': log_dict.get('activity'),
+                        'Timestamp': log_dict.get('timestamp'),
+                        'Project_ID': log_dict.get('project_id'),
+                        'Type': log_dict.get('activity_type', 'general')
+                    })
+                
+                logs_df = pd.DataFrame(logs_data)
                 
                 # Filter by current project if selected
                 if st.session_state.current_project_id:
@@ -801,7 +896,11 @@ Tarih: {st.session_state.file2_info['modified']}
                 files_data = []
                 for file in recent_files:
                     # Convert sqlite3.Row to dict
-                    file_dict = dict(file)
+                    if hasattr(file, 'keys'):
+                        file_dict = dict(file)
+                    else:
+                        file_dict = file
+                        
                     files_data.append({
                         'Dosya Adı': file_dict['filename'],
                         'İş Emri No': file_dict.get('is_emri_no', 'N/A'),
@@ -847,7 +946,7 @@ Tarih: {st.session_state.file2_info['modified']}
                 'project_id': st.session_state.current_project_id
             }
         elif export_source == "Proje Revizyonu":
-            if st.session_state.current_project_id and supabase and supabase.connection:
+            if st.session_state.current_project_id and supabase and supabase.is_connected():
                 # Get project comparisons for selection
                 local_project = db.get_project_by_id(st.session_state.current_project_id)
                 if local_project and local_project.get('supabase_id'):
@@ -855,7 +954,7 @@ Tarih: {st.session_state.file2_info['modified']}
                     
                     if comparisons:
                         comp_options = [f"Rev {c['revision_number']}: {c['comparison_title']}" for c in comparisons]
-                        selected_comp = st.selectbox("Hangi revizyonu export etmek istiyorsunız?", comp_options)
+                        selected_comp = st.selectbox("Hangi revizyonu export etmek istiyorsunuz?", comp_options)
                         
                         if selected_comp:
                             comp_index = comp_options.index(selected_comp)
@@ -914,12 +1013,13 @@ Tarih: {st.session_state.file2_info['modified']}
                             )
 
                             db.log_activity(f"WSCAD BOM data exported to ERP in {export_format} format", 
-                                          username, st.session_state.current_project_id)
+                                          username, st.session_state.current_project_id, activity_type='export')
 
                             st.success(f"✅ WSCAD BOM verileri başarıyla ERP'ye aktarıldı: {export_result}")
                         except Exception as e:
                             st.error(f"❌ ERP'ye aktarmada hata: {str(e)}")
-                            db.log_activity(f"ERP export failed: {str(e)}", username, st.session_state.current_project_id)
+                            db.log_activity(f"ERP export failed: {str(e)}", username, 
+                                          st.session_state.current_project_id, activity_type='export')
             
             with col2:
                 # Manual export - JSON/CSV download
@@ -991,10 +1091,31 @@ Tarih: {st.session_state.file2_info['modified']}
         
         # Get export activities from logs
         all_logs = db.get_activity_logs(50)
-        export_logs = [log for log in all_logs if 'export' in log[2].lower() or 'erp' in log[2].lower()]
+        export_logs = []
+        
+        for log in all_logs:
+            if hasattr(log, 'keys'):
+                log_dict = dict(log)
+            else:
+                log_dict = log
+            
+            activity = log_dict.get('activity', '').lower()
+            if 'export' in activity or 'erp' in activity:
+                export_logs.append(log_dict)
         
         if export_logs:
-            export_df = pd.DataFrame(export_logs, columns=["ID", "User", "Activity", "Timestamp", "Project_ID", "File_Info"])
+            export_data_list = []
+            for log in export_logs:
+                export_data_list.append({
+                    'ID': log.get('id'),
+                    'User': log.get('username'),
+                    'Activity': log.get('activity'),
+                    'Timestamp': log.get('timestamp'),
+                    'Project_ID': log.get('project_id'),
+                    'Type': log.get('activity_type', 'export')
+                })
+            
+            export_df = pd.DataFrame(export_data_list)
             st.dataframe(export_df, use_container_width=True)
         else:
             st.info("Henüz ERP export işlemi yapılmamış")
