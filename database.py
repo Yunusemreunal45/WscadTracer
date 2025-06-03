@@ -35,18 +35,17 @@ class Database:
                     )
                 """)
 
-                # Create projects table with all required columns
+                # Create projects table with optimized columns
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS projects (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         name TEXT NOT NULL,
                         description TEXT,
-                        created_by TEXT,
+                        created_by TEXT NOT NULL,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        current_revision INTEGER DEFAULT 0,
                         is_active BOOLEAN DEFAULT 1,
-                        supabase_id TEXT,
+                        supabase_id TEXT UNIQUE,
                         sync_status TEXT DEFAULT 'pending',
                         project_type TEXT DEFAULT 'wscad',
                         UNIQUE(name COLLATE NOCASE)
@@ -70,7 +69,7 @@ class Database:
                 if 'supabase_id' not in columns:
                     conn.execute("ALTER TABLE projects ADD COLUMN supabase_id TEXT")
 
-                # Create activity logs table with all required columns
+                # Create activity logs table with optimized columns
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS activity_logs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,7 +77,6 @@ class Database:
                         activity TEXT NOT NULL,
                         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                         project_id INTEGER,
-                        file_info TEXT,
                         activity_type TEXT DEFAULT 'general',
                         FOREIGN KEY (project_id) REFERENCES projects(id)
                     )
@@ -127,22 +125,15 @@ class Database:
                     )
                 """)
 
-                # Create WSCAD comparisons table
+                # Create WSCAD comparisons table - updated to match Supabase schema
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS wscad_comparisons (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        file_id INTEGER,
-                        revision1_id INTEGER,
-                        revision2_id INTEGER,
                         changes_count INTEGER DEFAULT 0,
                         comparison_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        comparison_summary TEXT,
                         supabase_saved BOOLEAN DEFAULT 0,
                         supabase_comparison_id TEXT,
-                        created_by TEXT,
-                        FOREIGN KEY (file_id) REFERENCES wscad_files(id),
-                        FOREIGN KEY (revision1_id) REFERENCES wscad_file_revisions(id),
-                        FOREIGN KEY (revision2_id) REFERENCES wscad_file_revisions(id)
+                        created_by TEXT
                     )
                 """)
 
@@ -263,14 +254,15 @@ class Database:
             return None
 
     def get_all_projects(self):
-        """Get all active projects"""
+        """Get all active projects with actual revision counts"""
         try:
             return self.query("""
-                SELECT id, name, description, created_by, created_at, updated_at, current_revision,
-                       is_active, supabase_id, sync_status, project_type
-                FROM projects
-                WHERE is_active = 1
-                ORDER BY updated_at DESC
+                SELECT p.id, p.name, p.description, p.created_by, p.created_at, p.updated_at,
+                       COALESCE((SELECT COUNT(*) FROM project_comparisons WHERE project_id = p.id), 0) AS current_revision,
+                       p.is_active, p.supabase_id, p.sync_status, p.project_type
+                FROM projects p
+                WHERE p.is_active = 1
+                ORDER BY p.updated_at DESC
             """)
         except Exception as e:
             print(f"Error getting projects: {e}")
@@ -401,25 +393,33 @@ class Database:
 
     # Comparison Management
     def save_comparison_result(self, file1_id=None, file2_id=None, project_id=None, 
-                             changes_count=0, comparison_data=None, created_by=None):
+                               changes_count=0, comparison_data=None, created_by=None):
         """Save comparison result with improved structure"""
         try:
+            # Generate file names based on available information
+            file1_name = f"File_{file1_id}" if file1_id else "Unknown"
+            file2_name = f"File_{file2_id}" if file2_id else "Unknown"
+            
+            # Calculate changes_count if comparison_data is provided
+            if comparison_data is not None and isinstance(comparison_data, list):
+                changes_count = len(comparison_data)
+            
+            # First create the comparison record
             comparison_id = self.execute("""
                 INSERT INTO wscad_comparisons 
-                (file_id, revision1_id, revision2_id, changes_count, comparison_summary, created_by)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (file1_id, file1_id, file2_id, changes_count, 
-                  f"Changes: {changes_count}", created_by))
+                (changes_count, created_by)
+                VALUES (?, ?)
+            """, (changes_count, created_by))
             
             # Link to project if provided
             if comparison_id and project_id:
                 self.add_comparison_to_project(project_id, comparison_id, 
-                                             f"File_{file1_id}", f"File_{file2_id}")
+                                              file1_name, file2_name)
             
             return comparison_id
             
         except Exception as e:
-            print(f"Error saving comparison result: {e}")
+            print(f"SQL execution error: {e}\nQuery:\n                INSERT INTO wscad_comparisons\n\n                (changes_count, created_by)\n                VALUES (?, ?)    \n\nParams: ({changes_count}, '{created_by}')\n\nTable structure: {self.query('PRAGMA table_info(wscad_comparisons)')}")
             return None
 
     def add_comparison_to_project(self, project_id, comparison_id, file1_name, file2_name):
@@ -463,7 +463,6 @@ class Database:
                     pc.revision_number,
                     wc.changes_count,
                     wc.comparison_date,
-                    wc.comparison_summary,
                     wc.id as comparison_id,
                     wc.supabase_saved,
                     wc.created_by
@@ -609,6 +608,45 @@ class Database:
                     SET updated_at = created_at 
                     WHERE updated_at IS NULL
                 """)
+                
+                # Migrate wscad_comparisons table to match Supabase schema
+                try:
+                    # Check if the old columns exist
+                    cursor.execute("PRAGMA table_info(wscad_comparisons)")
+                    comparison_columns = [column[1] for column in cursor.fetchall()]
+                    
+                    if 'file_id' in comparison_columns:
+                        # Create a temporary table with the new schema
+                        cursor.execute("""
+                            CREATE TABLE IF NOT EXISTS wscad_comparisons_new (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                changes_count INTEGER DEFAULT 0,
+                                comparison_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                supabase_saved BOOLEAN DEFAULT 0,
+                                supabase_comparison_id TEXT,
+                                created_by TEXT
+                            )
+                        """)
+                        
+                        # Copy data from old table to new table
+                        cursor.execute("""
+                            INSERT INTO wscad_comparisons_new 
+                            (id, changes_count, comparison_date, 
+                             supabase_saved, supabase_comparison_id, created_by)
+                            SELECT id, changes_count, comparison_date, 
+                                   supabase_saved, supabase_comparison_id, created_by
+                            FROM wscad_comparisons
+                        """)
+                        
+                        # Drop the old table
+                        cursor.execute("DROP TABLE wscad_comparisons")
+                        
+                        # Rename the new table to the old name
+                        cursor.execute("ALTER TABLE wscad_comparisons_new RENAME TO wscad_comparisons")
+                        
+                        print("✅ Migrated wscad_comparisons table to match Supabase schema")
+                except Exception as e:
+                    print(f"⚠️ Error migrating wscad_comparisons table: {e}")
                 
                 conn.commit()
                 print("✅ Database schema migration completed")

@@ -20,6 +20,10 @@ from utils import get_file_info, log_activity
 def sync_comparison_to_supabase(supabase, db, comparison_data, file1_info, file2_info, username, project_id):
     """Karşılaştırma sonuçlarını Supabase'e senkronize et"""
     try:
+        # First ensure Supabase connection is active
+        if not supabase.ensure_connection():
+            return False, "Supabase bağlantısı kurulamadı"
+            
         # Get project Supabase ID
         local_project = db.get_project_by_id(project_id)
         if not local_project:
@@ -31,6 +35,10 @@ def sync_comparison_to_supabase(supabase, db, comparison_data, file1_info, file2
         if not supabase_project_id:
             # Önce projenin Supabase'de var olup olmadığını kontrol et
             try:
+                # Ensure connection again before database operations
+                if not supabase.ensure_connection():
+                    return False, "Supabase bağlantısı kurulamadı"
+                    
                 # Proje adı ve oluşturan kullanıcıya göre ara
                 cursor = supabase.connection.cursor()
                 cursor.execute("""
@@ -60,10 +68,20 @@ def sync_comparison_to_supabase(supabase, db, comparison_data, file1_info, file2
                         return False, "Proje Supabase'e oluşturulamadı"
             except Exception as e:
                 print(f"❌ Proje kontrol/oluşturma hatası: {str(e)}")
+                # Try to reconnect if there was a connection error
+                supabase.reconnect()
                 return False, f"Proje senkronizasyon hatası: {str(e)}"
+            finally:
+                # Always close the cursor to prevent resource leaks
+                if 'cursor' in locals() and cursor:
+                    cursor.close()
         
         # Projenin Supabase'de hala var olduğunu doğrula
         try:
+            # Ensure connection again before database operations
+            if not supabase.ensure_connection():
+                return False, "Supabase bağlantısı kurulamadı"
+                
             cursor = supabase.connection.cursor()
             cursor.execute("""
                 SELECT id, name FROM wscad_projects 
@@ -87,8 +105,18 @@ def sync_comparison_to_supabase(supabase, db, comparison_data, file1_info, file2
                     return False, "Proje yeniden oluşturulamadı"
         except Exception as e:
             print(f"❌ Proje doğrulama hatası: {str(e)}")
+            # Try to reconnect if there was a connection error
+            supabase.reconnect()
             return False, f"Proje doğrulama hatası: {str(e)}"
+        finally:
+            # Always close the cursor to prevent resource leaks
+            if 'cursor' in locals() and cursor:
+                cursor.close()
         
+        # Ensure connection again before saving comparison
+        if not supabase.ensure_connection():
+            return False, "Supabase bağlantısı kurulamadı"
+            
         # Save comparison to Supabase
         comparison_id = supabase.save_wscad_comparison_to_project(
             supabase_project_id,
@@ -101,26 +129,16 @@ def sync_comparison_to_supabase(supabase, db, comparison_data, file1_info, file2
         )
         
         if comparison_id:
-            # Save to local DB as well
-            local_comparison_id = db.save_comparison_result(
-                file1_id=None,
-                file2_id=None,
-                project_id=project_id,
-                changes_count=len(comparison_data),
-                comparison_data=comparison_data,
-                created_by=username
-            )
-            
-            if local_comparison_id:
-                db.mark_comparison_synced_to_supabase(local_comparison_id, comparison_id)
-                return True, f"Karşılaştırma başarıyla kaydedildi (ID: {comparison_id})"
-            else:
-                return False, "Yerel veritabanına kaydedilemedi"
+            # Skip saving to local DB, only save to Supabase
+            print(f"✅ Karşılaştırma Supabase'e kaydedildi (ID: {comparison_id})")
+            return True, f"Karşılaştırma başarıyla kaydedildi (ID: {comparison_id})"
         else:
             return False, "Supabase'e kaydedilemedi"
             
     except Exception as e:
         print(f"❌ Senkronizasyon hatası: {str(e)}")
+        # Try to reconnect if there was a connection error
+        supabase.reconnect()
         return False, f"Senkronizasyon hatası: {str(e)}"
 
 # Page configuration
@@ -146,107 +164,30 @@ def get_database():
 # Initialize Supabase manager (karşılaştırma sonuçları için)
 @st.cache_resource
 def get_supabase_manager():
-    """Initialize Supabase connection with reconnection support"""
+    """Initialize Supabase connection with improved connection handling"""
     try:
+        # Create or get the singleton instance
         supabase = SupabaseManager()
-        if not supabase.connection or supabase.connection.closed:
-            if not supabase.reconnect():
-                st.error("❌ Supabase bağlantısı kurulamadı!")
-                return None
+        
+        # Ensure connection is active
+        if not supabase.ensure_connection():
+            st.error("❌ Supabase bağlantısı kurulamadı!")
+            return None
         
         # Tablo yapısını kontrol et ve düzelt
-        if supabase.is_connected():
-            with st.spinner("🔧 Supabase tablo yapısı kontrol ediliyor..."):
-                try:
-                    # Önce mevcut tabloları kontrol et
-                    cursor = supabase.connection.cursor()
-                    cursor.execute("""
-                        SELECT table_name 
-                        FROM information_schema.tables 
-                        WHERE table_schema = 'public' 
-                        AND table_name LIKE 'wscad_%'
-                    """)
-                    existing_tables = [row[0] for row in cursor.fetchall()]
-                    
-                    required_tables = [
-                        'wscad_projects',
-                        'wscad_project_comparisons',
-                        'wscad_comparison_changes',
-                        'wscad_quantity_changes',
-                        'wscad_project_statistics'
-                    ]
-                    
-                    missing_tables = [table for table in required_tables if table not in existing_tables]
-                    
-                    if missing_tables:
-                        st.warning(f"⚠️ Eksik tablolar tespit edildi: {', '.join(missing_tables)}")
-                        
-                        # Tabloları yeniden oluştur
-                        try:
-                            # Önce mevcut tabloları temizle
-                            cursor.execute("""
-                                DROP TABLE IF EXISTS wscad_quantity_changes CASCADE;
-                                DROP TABLE IF EXISTS wscad_comparison_changes CASCADE;
-                                DROP TABLE IF EXISTS wscad_project_comparisons CASCADE;
-                                DROP TABLE IF EXISTS wscad_project_statistics CASCADE;
-                                DROP TABLE IF EXISTS wscad_projects CASCADE;
-                            """)
-                            supabase.connection.commit()
-                            
-                            # Tabloları yeniden oluştur
-                            if supabase.setup_wscad_tables():
-                                # Oluşturulan tabloları kontrol et
-                                cursor.execute("""
-                                    SELECT table_name 
-                                    FROM information_schema.tables 
-                                    WHERE table_schema = 'public' 
-                                    AND table_name LIKE 'wscad_%'
-                                """)
-                                created_tables = [row[0] for row in cursor.fetchall()]
-                                
-                                if all(table in created_tables for table in required_tables):
-                                    st.success("✅ Tüm Supabase tabloları başarıyla oluşturuldu")
-                                else:
-                                    still_missing = [table for table in required_tables if table not in created_tables]
-                                    st.error(f"❌ Bazı tablolar oluşturulamadı: {', '.join(still_missing)}")
-                                    return None
-                            else:
-                                st.error("❌ Tablo oluşturma işlemi başarısız")
-                                return None
-                                
-                        except Exception as e:
-                            st.error(f"❌ Tablo oluşturma hatası: {str(e)}")
-                            if supabase.connection and not supabase.connection.closed:
-                                supabase.connection.rollback()
-                            return None
-                    else:
-                        st.success("✅ Tüm gerekli Supabase tabloları mevcut")
-                        
-                    # Tablo yapılarını detaylı kontrol et
-                    for table in required_tables:
-                        try:
-                            cursor.execute(f"""
-                                SELECT column_name, data_type, is_nullable 
-                                FROM information_schema.columns 
-                                WHERE table_name = %s 
-                                ORDER BY ordinal_position
-                            """, (table,))
-                            columns = cursor.fetchall()
-                            if not columns:
-                                st.error(f"❌ {table} tablosu boş veya hatalı")
-                                return None
-                        except Exception as e:
-                            st.error(f"❌ {table} tablosu kontrol hatası: {str(e)}")
-                            return None
-                    
-                    return supabase
-                    
-                except Exception as e:
-                    st.error(f"❌ Tablo yapısı kontrol hatası: {str(e)}")
+        with st.spinner("🔧 Supabase tablo yapısı kontrol ediliyor..."):
+            # Use the new debug_table_structure method to check tables
+            if not supabase.debug_table_structure():
+                st.warning("⚠️ Supabase tablo yapısı eksik veya hatalı. Yeniden oluşturuluyor...")
+                
+                # Setup tables
+                if supabase.setup_wscad_tables():
+                    st.success("✅ Supabase tabloları başarıyla oluşturuldu")
+                else:
+                    st.error("❌ Tablo oluşturma hatası")
                     return None
-                finally:
-                    if cursor:
-                        cursor.close()
+            else:
+                st.success("✅ Supabase tabloları mevcut ve doğru yapıda")
         
         return supabase
     except Exception as e:
@@ -269,6 +210,22 @@ def show_supabase_status():
         return False
     
     try:
+        # First ensure the connection is active using our improved method
+        if not supabase.ensure_connection():
+            st.error("❌ Supabase bağlantısı kurulamadı!")
+            col1, col2 = st.columns([3,1])
+            with col2:
+                if st.button("🔄 Yeniden Bağlanmayı Dene", type="primary"):
+                    if supabase.reconnect():
+                        st.success("✅ Supabase bağlantısı yeniden kuruldu!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Yeniden bağlantı başarısız!")
+                        st.cache_resource.clear()
+                        st.rerun()
+            return False
+            
+        # Get detailed connection status
         connection_status = supabase.get_connection_status()
         
         if connection_status['status'] == 'connected':
@@ -299,9 +256,14 @@ def show_supabase_status():
                         st.rerun()
                     else:
                         st.error("❌ Yeniden bağlantı başarısız!")
+                        # Clear cache and try a complete restart
+                        st.cache_resource.clear()
+                        st.rerun()
             return False
     except Exception as e:
         st.error(f"❌ Bağlantı durumu kontrol hatası: {str(e)}")
+        # Try to reconnect on any error
+        supabase.reconnect()
         return False
 
 # Initialize processors - mevcut sınıf isimleri korundu
@@ -730,7 +692,7 @@ if auth_status:
                     diff_df = pd.DataFrame(st.session_state.comparison_result)
                     
                     # WSCAD BOM özet metrikleri
-                    col1, col2, col3, col4, col5 = st.columns(5)
+                    col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         st.metric("Toplam Değişiklik", len(diff_df))
                     with col2:
@@ -742,9 +704,6 @@ if auth_status:
                     with col4:
                         removed_count = len(diff_df[diff_df['change_type'] == 'removed']) if 'change_type' in diff_df.columns else 0
                         st.metric("➖ Silinen Kalemler", removed_count)
-                    with col5:
-                        quantity_changes = len(diff_df[diff_df['change_type'].str.contains('quantity', na=False)]) if 'change_type' in diff_df.columns else 0
-                        st.metric("📊 Miktar Değişiklikleri", quantity_changes)
 
                 # Kaydetme bölümü
                 st.markdown("---")
@@ -769,13 +728,11 @@ if auth_status:
                         - Değişen alanlar: {}
                         - Eklenen kalemler: {}
                         - Silinen kalemler: {}
-                        - Miktar değişiklikleri: {}
                         """.format(
                             len(diff_df),
                             modified_count,
                             added_count,
-                            removed_count,
-                            quantity_changes
+                            removed_count
                         ))
                     
                     with col2:
@@ -1079,10 +1036,15 @@ Tarih: {st.session_state.file2_info['modified']}
                             col1, col2 = st.columns(2)
                             
                             with col1:
-                                st.write(f"**Dosya 1:** {comp['file1_name']}")
-                                st.write(f"**İş Emri:** {comp.get('file1_is_emri_no', 'N/A')}")
-                                st.write(f"**Revizyon:** {comp.get('file1_revizyon_no', 'N/A')}")
-                            
+                                st.write(f"**Dosya 1:** {comp.get('file1_name', 'N/A')}")
+                                st.write(f"**Dosya 1:** {comp.get('file1_name', 'N/A')}")
+                                st.write(f"**Dosya 2:** {comp.get('file2_name', 'N/A')}")
+                                st.write(f"**Revizyon:** {comp.get('revision_number', 'N/A')}")
+                                st.write(f"**Oluşturan:** {comp.get('created_by', 'N/A')}")
+                                st.write(f"**Tarih:** {comp.get('created_at', 'N/A')}")
+                                st.write(f"**Değişiklik Sayısı:** {comp.get('changes_count', 'N/A')}")
+                                st.write(f"**Durum:** {comp.get('status', 'N/A')}")
+                                 
                             with col2:
                                 st.write(f"**Dosya 2:** {comp['file2_name']}")
                                 st.write(f"**İş Emri:** {comp.get('file2_is_emri_no', 'N/A')}")
