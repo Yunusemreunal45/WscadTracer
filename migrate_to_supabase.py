@@ -33,12 +33,9 @@ class SupabaseManager:
         self.max_reconnect_attempts = 5  # Increased from 3 to 5
         self.last_connection_check = 0
         self.connection_check_interval = 10  # Check connection every 10 seconds
+        # Use connection string from environment variables
         self.connection_params = {
-            'host': os.getenv('SUPABASE_HOST'),
-            'database': os.getenv('SUPABASE_DATABASE'),
-            'user': os.getenv('SUPABASE_USER'),
-            'password': os.getenv('SUPABASE_PASSWORD'),
-            'port': os.getenv('SUPABASE_PORT', 5432),
+            'dsn': os.getenv('DATABASE_URL'),  # Use the connection string with pgbouncer
             'connect_timeout': 10
         }
         self._connect()
@@ -54,13 +51,9 @@ class SupabaseManager:
                 except Exception:
                     pass
             
-            # Create a new connection
+            # Create a new connection using the connection string
             self.connection = psycopg2.connect(
-                host=os.getenv('SUPABASE_HOST'),
-                database=os.getenv('SUPABASE_DATABASE'),
-                user=os.getenv('SUPABASE_USER'),
-                password=os.getenv('SUPABASE_PASSWORD'),
-                port=os.getenv('SUPABASE_PORT', 5432),
+                dsn=os.getenv('DATABASE_URL'),  # Use the connection string with pgbouncer
                 connect_timeout=10
             )
             self.connection.autocommit = False
